@@ -11,3 +11,7 @@ venv
 .coverage
 htmlcov
 .DS_Store
+.env
+.env.local
+API_DEEP_DIVE.md
+WALKTHROUGH.md

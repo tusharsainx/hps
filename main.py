@@ -3,9 +3,8 @@
 import sys
 from pathlib import Path
 
-# Ensure project root is in sys.path so running from either project root
-# (uvicorn app.main:app) or within the app/ directory (uvicorn main:app) works seamlessly
-_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+# Ensure project root is in sys.path
+_PROJECT_ROOT = str(Path(__file__).resolve().parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -27,7 +26,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("app.main")
+logger = logging.getLogger("main")
 
 settings = get_settings()
 

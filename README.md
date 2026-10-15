@@ -201,7 +201,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 4. Start local development server
-uvicorn app.main:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 ```
 
 Access the interactive Swagger OpenAPI documentation at **`http://localhost:8000/docs`** (root **`http://localhost:8000`** automatically redirects to `/docs`).
@@ -242,15 +242,24 @@ pytest -v -m live
 
 ## 🌐 8. Deployment to Render
 
-The repository includes a ready-to-use [`render.yaml`](render.yaml) blueprint:
+Deploying to Render as a Web Service:
 
 1. Push your repository to GitHub or GitLab.
-2. In the Render Dashboard, click **New +** → **Blueprint**.
-3. Select your repository. Render will automatically detect `render.yaml` and configure:
-   - Build command: `pip install -r requirements.txt`
-   - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-   - Health check path: `/health`
-4. Click **Deploy**. Your service will be live in ~2 minutes!
+2. In the Render Dashboard, click **New +** → **Web Service**.
+3. Connect your repository and configure:
+   - **Environment**: `Python`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+   - **Health Check Path** (under Advanced): `/health`
+4. Under **Environment Variables**, add:
+   - `HOSPITAL_API_BASE_URL` = `https://hospital-directory.onrender.com`
+   - `CONCURRENCY_LIMIT` = `10`
+   - `MAX_CSV_ROWS` = `20`
+   - `REQUEST_TIMEOUT_SECONDS` = `15.0`
+   - `MAX_RETRIES` = `3`
+   - `KEEP_ALIVE_ENABLED` = `true`
+   - `KEEP_ALIVE_INTERVAL_SECONDS` = `600`
+5. Click **Deploy Web Service**. Your service will be live in ~2 minutes!
 
 ---
 

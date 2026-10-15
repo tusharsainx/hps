@@ -5,7 +5,7 @@ import pytest_asyncio
 import httpx
 from httpx import ASGITransport
 
-from app.main import app
+from main import app
 from app.config import Settings, get_settings
 
 
