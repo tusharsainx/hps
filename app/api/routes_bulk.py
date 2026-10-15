@@ -75,7 +75,7 @@ async def bulk_create_hospitals(
         records = validator.validate_and_parse(content_bytes)
     except CsvValidationException as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "message": exc.message,
                 "errors": [err.model_dump() for err in exc.errors],

@@ -65,7 +65,7 @@ app.include_router(api_router)
 @app.exception_handler(CsvValidationException)
 async def csv_validation_exception_handler(request: Request, exc: CsvValidationException):
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={
             "error": "CSV Validation Failed",
             "message": exc.message,
