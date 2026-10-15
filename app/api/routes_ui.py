@@ -32,10 +32,14 @@ async def health_check():
     """Health check endpoint for Render and container orchestrators."""
     settings = get_settings()
     client = HospitalClient(settings=settings)
-    upstream_ok = await client.check_health()
+    try:
+        upstream_ok = await client.check_health()
+    finally:
+        await client.close()
     return {
         "status": "healthy",
         "service": settings.APP_TITLE,
         "version": settings.APP_VERSION,
         "upstream_api_connected": upstream_ok,
     }
+

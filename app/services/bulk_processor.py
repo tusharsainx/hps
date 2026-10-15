@@ -18,12 +18,8 @@ from app.services.batch_repository import (
     get_batch_repository,
 )
 from app.services.progress_broadcaster import (
-    BaseProgressBroadcaster,
+    ProgressBroadcaster,
     get_progress_broadcaster,
-)
-from app.services.rate_limiter import (
-    BaseRateLimiter,
-    TokenBucketRateLimiter,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,17 +32,13 @@ class BulkProcessor:
         self,
         client: Optional[HospitalClient] = None,
         repository: Optional[BaseBatchRepository] = None,
-        broadcaster: Optional[BaseProgressBroadcaster] = None,
-        rate_limiter: Optional[BaseRateLimiter] = None,
+        broadcaster: Optional[ProgressBroadcaster] = None,
         settings: Optional[Settings] = None,
     ):
         self.settings = settings or get_settings()
         self.client = client or HospitalClient(settings=self.settings)
         self.repository = repository or get_batch_repository()
         self.broadcaster = broadcaster or get_progress_broadcaster()
-        self.rate_limiter = rate_limiter or TokenBucketRateLimiter(
-            rate_limit_rps=float(getattr(self.settings, "GLOBAL_RATE_LIMIT_RPS", 25.0))
-        )
         self.concurrency_limit = self.settings.CONCURRENCY_LIMIT
 
     async def process_batch(
@@ -66,7 +58,6 @@ class BulkProcessor:
 
         async def _worker(rec: HospitalRecord):
             async with semaphore:
-                await self.rate_limiter.acquire()
                 try:
                     payload = HospitalCreate(
                         name=rec.name,
@@ -181,7 +172,6 @@ class BulkProcessor:
 
             async def _retry_worker(rec: HospitalRecord):
                 async with semaphore:
-                    await self.rate_limiter.acquire()
                     try:
                         payload = HospitalCreate(
                             name=rec.name,

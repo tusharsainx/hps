@@ -1,4 +1,4 @@
-# Hospital Bulk Processing System (Paribus Challenge)
+# Hospital Bulk Processing System
 
 A high-performance, asynchronous bulk processing system built with **FastAPI**, **HTTPX**, and **WebSockets** that integrates with the external **Hospital Directory API** (`https://hospital-directory.onrender.com`).
 
@@ -58,18 +58,14 @@ sequenceDiagram
 
 ---
 
-## 📐 2. Standard Scale vs. Enterprise Scale Evolution (Ports & Adapters)
+## 📐 2. Architecture & Design Principles
 
-The codebase implements the **Ports & Adapters (Hexagonal)** design pattern. Core ingestion and business logic depend strictly on abstract interfaces. Transitioning from Standard Scale to a multi-node, distributed Enterprise cluster requires **zero code modifications**—only switching environment flags:
+The codebase is built following clean architecture and **SOLID** design principles, keeping the system lightweight, thread-safe, and focused on the challenge requirements:
 
-| Architectural Port | Standard Scale Adapter | Enterprise Scale Adapter | How to Switch (Zero Code Changes) |
-| :--- | :--- | :--- | :--- |
-| **State Storage Port**<br>`BaseBatchRepository` | `InMemoryBatchRepository`<br>(Thread-safe, LRU cache) | `PersistentSqliteBatchRepository`<br>or PostgreSQL/Redis | Set `STORAGE_BACKEND=database`<br>and `DATABASE_URL=sqlite:///./batches.db` (or postgres) |
-| **Pub/Sub Port**<br>`BaseProgressBroadcaster` | `InMemoryProgressBroadcaster`<br>(Local instance WebSockets) | `DistributedPubSubBroadcaster`<br>(Redis Pub/Sub topic) | Set `DISTRIBUTED_PUBSUB_ENABLED=true`<br>and `REDIS_URL=redis://...` |
-| **Rate Limiter Port**<br>`BaseRateLimiter` | `TokenBucketRateLimiter`<br>(Local memory token bucket) | Distributed Redis Token Bucket | Configured via `GLOBAL_RATE_LIMIT_RPS=50` |
-| **Task Queue Port**<br>`Execution Engine` | In-process `asyncio.Semaphore` | Distributed Task Queue (Celery / ARQ / Temporal) | Configured via `EXECUTION_ENGINE=distributed` |
-
-👉 **For complete details, cluster topology diagrams, and multi-node setup, see [`enterprise_scaling_architecture.md`](enterprise_scaling_architecture.md).**
+* **Separation of Concerns**: Ingestion, validation, upstream HTTP interaction, state management, and real-time broadcasting are decoupled into dedicated service layers.
+* **Thread-Safe In-Memory State**: `InMemoryBatchRepository` manages batch metadata, row items, and status transitions with a `threading.Lock` and bounded LRU eviction (configurable capacity) to prevent unbounded memory growth.
+* **Dependency Injection**: Services (`BulkProcessor`, `HospitalClient`, `ProgressBroadcaster`, `InMemoryBatchRepository`) are supplied via FastAPI dependency providers, enabling effortless unit testing and mocking.
+* **Defensive Input Validation**: Streaming CSV parsing via `csv.DictReader` with strict column presence checking, whitespace normalization, BOM handling, and custom `CsvValidationException`.
 
 ---
 

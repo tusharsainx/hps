@@ -87,3 +87,15 @@ def test_case_insensitive_headers():
     records = validator.validate_and_parse(csv_bytes)
     assert len(records) == 1
     assert records[0].name == "Hospital Caps"
+
+
+def test_missing_phone_column_is_valid():
+    """Since phone is optional, CSV with only name and address is valid."""
+    csv_bytes = b"name,address\nHospital No Phone,456 Elm St\n"
+    validator = CsvValidator(max_rows=20)
+    records = validator.validate_and_parse(csv_bytes)
+    assert len(records) == 1
+    assert records[0].name == "Hospital No Phone"
+    assert records[0].address == "456 Elm St"
+    assert records[0].phone is None
+

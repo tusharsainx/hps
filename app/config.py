@@ -1,7 +1,10 @@
-"""Application configuration and environment settings."""
-
+import os
 from functools import lru_cache
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_ENV_FILE = os.path.join(_ROOT_DIR, ".env")
 
 
 class Settings(BaseSettings):
@@ -22,13 +25,10 @@ class Settings(BaseSettings):
     # In-memory batch cache limit (evicts oldest when full)
     MAX_BATCH_STORE_SIZE: int = 10000
 
-    # Enterprise Scaling & Pluggable Backends
-    STORAGE_BACKEND: str = "memory"  # Options: 'memory', 'redis', 'database'
-    REDIS_URL: str = "redis://localhost:6379/0"
-    DATABASE_URL: str = "sqlite:///./batches.db"
-    EXECUTION_ENGINE: str = "asyncio"  # Options: 'asyncio', 'distributed'
-    DISTRIBUTED_PUBSUB_ENABLED: bool = False
-    GLOBAL_RATE_LIMIT_RPS: int = 25
+    # Render Keep-Alive Heartbeat (prevents free-tier sleep after 15 min inactivity)
+    KEEP_ALIVE_ENABLED: bool = True
+    KEEP_ALIVE_INTERVAL_SECONDS: int = 600  # Ping every 10 min (600s < 900s Render limit)
+    SELF_PING_URL: Optional[str] = None     # Optional self URL for deployed instances
 
     # Application Metadata
     APP_TITLE: str = "Hospital Bulk Processing System"
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", _ENV_FILE),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

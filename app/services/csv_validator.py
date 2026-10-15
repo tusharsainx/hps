@@ -88,14 +88,14 @@ class CsvValidator:
         normalized_headers = [col.strip().lower() for col in header_row if col is not None]
         errors: List[ValidationErrorItem] = []
 
-        # Validate Header Columns
+        # Validate Header Columns (phone is optional)
         missing_columns = self.REQUIRED_COLUMNS - set(normalized_headers)
         if missing_columns:
             errors.append(
                 ValidationErrorItem(
                     row=1,
                     column=None,
-                    message=f"Missing required CSV column(s): {', '.join(sorted(missing_columns))}. Header must include name,address,phone.",
+                    message=f"Missing required CSV column(s): {', '.join(sorted(missing_columns))}. Header must include name and address.",
                 )
             )
 

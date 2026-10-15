@@ -1,12 +1,7 @@
-"""Unit tests for repository implementations (In-Memory and Persistent SQLite)."""
+"""Unit tests for InMemoryBatchRepository implementation."""
 
 import pytest
-import os
-import tempfile
-from app.services.batch_repository import (
-    InMemoryBatchRepository,
-    PersistentSqliteBatchRepository,
-)
+from app.services.batch_repository import InMemoryBatchRepository
 from app.models.hospital import HospitalRecord
 from app.models.batch import BatchStatus
 
@@ -55,43 +50,3 @@ def test_in_memory_repository_lifecycle(sample_records):
     assert repo.get_stats()["total_stored_batches"] == 0
     assert repo.get_batch(batch_id) is None
 
-
-def test_sqlite_persistent_repository_lifecycle(sample_records):
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
-
-    try:
-        repo = PersistentSqliteBatchRepository(db_path=db_path)
-        batch_id = "test-sqlite-1"
-
-        # Create
-        batch = repo.create_batch(batch_id, sample_records)
-        assert batch.total_hospitals == 2
-
-        # Update row 1 success
-        repo.update_row_success(batch_id, 1, 201)
-        b = repo.get_batch(batch_id)
-        assert b.processed_hospitals == 1
-        assert b.hospitals[1].hospital_id == 201
-        assert b.hospitals[1].status == "created"
-
-        # Update row 2 success
-        repo.update_row_success(batch_id, 2, 202)
-        b = repo.get_batch(batch_id)
-        assert b.processed_hospitals == 2
-
-        # Complete with activation
-        repo.complete_batch(batch_id, activated=True)
-        b = repo.get_batch(batch_id)
-        assert b.status == BatchStatus.ACTIVATED
-        assert b.batch_activated is True
-        assert b.hospitals[1].status == "created_and_activated"
-        assert b.hospitals[2].status == "created_and_activated"
-
-        # Verify listing
-        recent = repo.list_recent_batches(10)
-        assert len(recent) == 1
-        assert recent[0].batch_id == batch_id
-    finally:
-        if os.path.exists(db_path):
-            os.remove(db_path)
