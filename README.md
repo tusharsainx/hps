@@ -58,18 +58,18 @@ sequenceDiagram
 
 ---
 
-## 📐 2. Standard Scale vs. Enterprise Scale Evolution
+## 📐 2. Standard Scale vs. Enterprise Scale Evolution (Ports & Adapters)
 
-Following our capacity planning and architectural roadmap:
+The codebase implements the **Ports & Adapters (Hexagonal)** design pattern. Core ingestion and business logic depend strictly on abstract interfaces. Transitioning from Standard Scale to a multi-node, distributed Enterprise cluster requires **zero code modifications**—only switching environment flags:
 
-| Dimension | Standard Scale (Current Implementation) | Enterprise Scale (Evolutionary Path) |
-| :--- | :--- | :--- |
-| **Throughput Target** | 10,000 hospitals / day (500 batches/day) | 100,000+ hospitals / day (5,000+ batches/day) |
-| **Ingress QPS** | ~0.03 bulk uploads/sec peak | ~0.3 - 1.0 bulk uploads/sec peak |
-| **Upstream Fan-out** | 21 calls per batch (Semaphore = 10) | 21 calls per batch (distributed worker pools) |
-| **State Persistence** | Thread-safe `InMemoryBatchRepository` with LRU eviction | Redis / PostgreSQL using `BaseBatchRepository` interface |
-| **Execution Queue** | In-process `asyncio.gather` with non-blocking tasks | Distributed task queue (Celery, ARQ, or Temporal) |
-| **Memory Footprint** | ~3 KB per batch (~30 MB for 10,000 batches) | Offloaded to distributed cache with Redis TTL |
+| Architectural Port | Standard Scale Adapter | Enterprise Scale Adapter | How to Switch (Zero Code Changes) |
+| :--- | :--- | :--- | :--- |
+| **State Storage Port**<br>`BaseBatchRepository` | `InMemoryBatchRepository`<br>(Thread-safe, LRU cache) | `PersistentSqliteBatchRepository`<br>or PostgreSQL/Redis | Set `STORAGE_BACKEND=database`<br>and `DATABASE_URL=sqlite:///./batches.db` (or postgres) |
+| **Pub/Sub Port**<br>`BaseProgressBroadcaster` | `InMemoryProgressBroadcaster`<br>(Local instance WebSockets) | `DistributedPubSubBroadcaster`<br>(Redis Pub/Sub topic) | Set `DISTRIBUTED_PUBSUB_ENABLED=true`<br>and `REDIS_URL=redis://...` |
+| **Rate Limiter Port**<br>`BaseRateLimiter` | `TokenBucketRateLimiter`<br>(Local memory token bucket) | Distributed Redis Token Bucket | Configured via `GLOBAL_RATE_LIMIT_RPS=50` |
+| **Task Queue Port**<br>`Execution Engine` | In-process `asyncio.Semaphore` | Distributed Task Queue (Celery / ARQ / Temporal) | Configured via `EXECUTION_ENGINE=distributed` |
+
+👉 **For complete details, cluster topology diagrams, and multi-node setup, see [`enterprise_scaling_architecture.md`](enterprise_scaling_architecture.md).**
 
 ---
 

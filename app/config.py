@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     # In-memory batch cache limit (evicts oldest when full)
     MAX_BATCH_STORE_SIZE: int = 10000
 
+    # Enterprise Scaling & Pluggable Backends
+    STORAGE_BACKEND: str = "memory"  # Options: 'memory', 'redis', 'database'
+    REDIS_URL: str = "redis://localhost:6379/0"
+    DATABASE_URL: str = "sqlite:///./batches.db"
+    EXECUTION_ENGINE: str = "asyncio"  # Options: 'asyncio', 'distributed'
+    DISTRIBUTED_PUBSUB_ENABLED: bool = False
+    GLOBAL_RATE_LIMIT_RPS: int = 25
+
     # Application Metadata
     APP_TITLE: str = "Hospital Bulk Processing System"
     APP_DESCRIPTION: str = (
