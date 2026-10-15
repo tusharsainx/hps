@@ -199,6 +199,22 @@ class InMemoryBatchRepository(BaseBatchRepository):
             recent.reverse()
             return [b.to_progress_response() for b in recent]
 
+    def clear(self):
+        """Helper to clear all stored batches (useful for test isolation and administrative reset)."""
+        with self._lock:
+            self._store.clear()
+
+    def get_stats(self) -> dict:
+        """Helper returning storage metrics, batch counts, and capacity utilization."""
+        with self._lock:
+            return {
+                "total_stored_batches": len(self._store),
+                "max_capacity": self.max_capacity,
+                "active_processing_batches": sum(
+                    1 for b in self._store.values() if b.status == BatchStatus.PROCESSING
+                ),
+            }
+
 
 class PersistentSqliteBatchRepository(BaseBatchRepository):
     """Enterprise-ready SQLite persistent repository for durable multi-worker batch storage."""

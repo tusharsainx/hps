@@ -34,6 +34,25 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down %s...", settings.APP_TITLE)
 
 
+openapi_tags = [
+    {
+        "name": "Bulk Processing",
+        "description": "Endpoints to ingest CSV files, pre-validate schemas, resume failed operations, and rollback batches.",
+    },
+    {
+        "name": "Batch Status & Progress",
+        "description": "Polling endpoints to monitor batch progress, execution metrics, and list historical batches.",
+    },
+    {
+        "name": "Real-Time Progress",
+        "description": "WebSocket endpoint streaming real-time per-hospital progress events.",
+    },
+    {
+        "name": "Monitoring",
+        "description": "Health check probes for service availability and upstream directory connectivity.",
+    },
+]
+
 app = FastAPI(
     title=settings.APP_TITLE,
     description=settings.APP_DESCRIPTION,
@@ -42,6 +61,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    openapi_tags=openapi_tags,
 )
 
 # CORS Configuration

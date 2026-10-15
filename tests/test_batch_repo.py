@@ -46,6 +46,15 @@ def test_in_memory_repository_lifecycle(sample_records):
     assert b.status == BatchStatus.PARTIALLY_FAILED
     assert b.batch_activated is False
 
+    # Verify helpers: get_stats and clear
+    stats = repo.get_stats()
+    assert stats["total_stored_batches"] == 1
+    assert stats["max_capacity"] == 10000
+
+    repo.clear()
+    assert repo.get_stats()["total_stored_batches"] == 0
+    assert repo.get_batch(batch_id) is None
+
 
 def test_sqlite_persistent_repository_lifecycle(sample_records):
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
