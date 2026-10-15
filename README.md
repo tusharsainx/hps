@@ -1,6 +1,6 @@
 # Hospital Bulk Processing System
 
-A high-performance, asynchronous bulk processing system built with **FastAPI**, **HTTPX**, and **WebSockets** that integrates with the external **Hospital Directory API** (`https://hospital-directory.onrender.com`).
+A high-performance, asynchronous bulk processing system built with **FastAPI** and **HTTPX** that integrates with the external **Hospital Directory API** (`https://hospital-directory.onrender.com`).
 
 It reliably handles multipart CSV file uploads, validates data formats and constraints, manages unique batch tracking IDs, executes concurrent creation requests with bounded rate-limiting and exponential backoff, and atomically activates batches.
 
@@ -17,7 +17,6 @@ sequenceDiagram
     participant Store as Batch State Repository
     participant Engine as Async Bulk Processor
     participant Upstream as Hospital Directory API (Render)
-    participant WS as WebSocket Hub
 
     Client->>API: POST /hospitals/bulk (CSV File)
     API->>Val: Validate CSV (Headers, Data Types, Max 20 Rows)
@@ -39,7 +38,6 @@ sequenceDiagram
                 Engine->>Engine: Retry with Exponential Backoff (up to 3x)
                 Engine->>Store: Update Row Status (FAILED)
             end
-            Engine->>WS: Broadcast Progress Event
         end
     end
 
@@ -47,11 +45,9 @@ sequenceDiagram
         Engine->>Upstream: PATCH /hospitals/batch/{batch_id}/activate
         Upstream-->>Engine: 200 OK (activated_count)
         Engine->>Store: Mark Batch ACTIVATED (status: created_and_activated)
-        Engine->>WS: Broadcast Complete (100%, active: true)
         API-->>Client: 200 OK (Full Batch Summary Response)
     else Any Row Failed
         Engine->>Store: Mark Batch PARTIALLY_FAILED
-        Engine->>WS: Broadcast Partial Failure
         API-->>Client: 200 OK (Response with failed_hospitals > 0, batch_activated: false)
     end
 ```
@@ -62,9 +58,9 @@ sequenceDiagram
 
 The codebase is built following clean architecture and **SOLID** design principles, keeping the system lightweight, thread-safe, and focused on the challenge requirements:
 
-* **Separation of Concerns**: Ingestion, validation, upstream HTTP interaction, state management, and real-time broadcasting are decoupled into dedicated service layers.
+* **Separation of Concerns**: Ingestion, validation, upstream HTTP interaction, and state management are decoupled into dedicated service layers.
 * **Thread-Safe In-Memory State**: `InMemoryBatchRepository` manages batch metadata, row items, and status transitions with a `threading.Lock` and bounded LRU eviction (configurable capacity) to prevent unbounded memory growth.
-* **Dependency Injection**: Services (`BulkProcessor`, `HospitalClient`, `ProgressBroadcaster`, `InMemoryBatchRepository`) are supplied via FastAPI dependency providers, enabling effortless unit testing and mocking.
+* **Dependency Injection**: Services (`BulkProcessor`, `HospitalClient`, `InMemoryBatchRepository`) are supplied via FastAPI dependency providers, enabling effortless unit testing and mocking.
 * **Defensive Input Validation**: Streaming CSV parsing via `csv.DictReader` with strict column presence checking, whitespace normalization, BOM handling, and custom `CsvValidationException`.
 
 ---
@@ -82,12 +78,12 @@ The codebase is built following clean architecture and **SOLID** design principl
 ## 🎁 4. Optional Tasks & Bonus Features Implemented
 
 * **Performance Optimization**: Bounded async execution, keep-alive pooling, and retry backoff.
-* **Progress Tracking**: Real-time progress updates available via both **WebSockets** (`/ws/batches/{batch_id}`) and a polling endpoint (`GET /hospitals/bulk/{batch_id}`).
+* **Progress Tracking**: Real-time batch inspection and progress tracking via polling endpoint (`GET /hospitals/bulk/{batch_id}`) and listing endpoint (`GET /hospitals/bulk`).
 * **Resume Capability**: `POST /hospitals/bulk/{batch_id}/resume` checks which records already exist upstream, skips completed records, retries failed ones, and activates the batch.
 * **Standalone CSV Validation**: `POST /hospitals/bulk/validate` inspects syntax, column headers, empty fields, and row counts before executing bulk operations.
 * **Batch Rollback**: `DELETE /hospitals/bulk/{batch_id}` cleans up batches from the upstream directory.
 * **Dockerization**: Production-ready multi-stage `Dockerfile` and `docker-compose.yml`.
-* **Interactive Web Dashboard**: Modern UI mounted at `/` for testing CSV uploads, viewing live progress bars, inspecting row states, and testing resumption.
+* **Interactive Web Dashboard**: Modern UI mounted at `/` for testing CSV uploads, polling progress bars, inspecting row states, and testing resumption.
 
 ---
 
@@ -97,7 +93,7 @@ The codebase is built following clean architecture and **SOLID** design principl
 * **Endpoint**: `POST /hospitals/bulk`
 * **Content-Type**: `multipart/form-data`
 * **Form Field**: `file` (CSV file with columns: `name,address,phone`)
-* **Optional Query Param**: `?background=true` (for asynchronous background processing)
+* **Execution**: Asynchronous concurrent non-blocking execution by default (`asyncio.Semaphore(10)`)
 
 #### Example Request:
 ```bash
@@ -180,20 +176,11 @@ curl "http://localhost:8000/hospitals/bulk/550e8400-e29b-41d4-a716-446655440000"
 
 ---
 
-### 5. Real-Time WebSocket Progress Stream
-* **WebSocket**: `ws://localhost:8000/ws/batches/{batch_id}`
-* Streams live updates as each hospital is created:
-```json
-{
-  "batch_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "processing",
-  "total_hospitals": 20,
-  "processed_hospitals": 14,
-  "failed_hospitals": 0,
-  "progress_percentage": 70.0,
-  "batch_activated": false,
-  "processing_time_seconds": 0.65
-}
+### 5. List Historical Batches
+* **Endpoint**: `GET /hospitals/bulk`
+
+```bash
+curl "http://localhost:8000/hospitals/bulk"
 ```
 
 ---
@@ -265,3 +252,58 @@ The repository includes a ready-to-use [`render.yaml`](render.yaml) blueprint:
    - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
    - Health check path: `/health`
 4. Click **Deploy**. Your service will be live in ~2 minutes!
+
+---
+
+## 🚀 9. Future Production Scaling Architecture (Enterprise & Big Data Scale)
+
+For enterprise scale, multi-gigabyte CSV files (millions of records), or high-concurrency multi-tenant workloads, the architecture evolves from direct multipart ingestion to a **decoupled, event-driven cloud pipeline**:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Client / Web App
+    participant API as FastAPI Gateway
+    participant S3 as Amazon S3 / Cloud Storage
+    participant Queue as SQS Queue / EventBridge
+    participant Workers as Distributed Worker Fleet (Celery / ECS)
+    participant Upstream as External Hospital Directory API
+    participant DB as Persistent State Store (Postgres / Redis)
+
+    Client->>API: 1. Request Upload URL (POST /hospitals/bulk/upload-url)
+    API-->>Client: 2. Return S3 Pre-signed URL + batch_id
+    Client->>S3: 3. Direct Upload CSV via Pre-signed URL (bypasses API server)
+    S3->>Queue: 4. Emit s3:ObjectCreated Event
+    Queue->>Workers: 5. Worker consumes event (bucket, object_key, batch_id)
+    Workers->>S3: 6. Stream CSV chunk-by-chunk (generator / chunked parsing)
+    Workers->>DB: 7. Validate & persist batch state (status: PROCESSING)
+    Workers->>Upstream: 8. Execute concurrent creation with distributed rate-limiting
+    alt All rows created
+        Workers->>Upstream: 9. Atomic PATCH /hospitals/batch/{batch_id}/activate
+        Workers->>DB: 10. Update status: ACTIVATED
+    else Partial failure
+        Workers->>DB: 10. Update status: PARTIALLY_FAILED (allows resume)
+    end
+    Client->>API: 11. Poll status: GET /hospitals/bulk/{batch_id}
+    API->>DB: 12. Read batch progress
+    API-->>Client: 13. Progress summary & row items
+```
+
+### Key Architectural Pillars for Scale:
+
+1. **Direct-to-S3 Upload via Pre-signed URLs**:
+   - Instead of routing massive CSV payloads through the FastAPI application server (which exhausts server memory and ties up HTTP worker threads), the client requests a short-lived **Pre-signed PUT/POST URL** from the backend.
+   - The file streams directly from the client's browser/CLI to **Amazon S3** (or Google Cloud Storage / Azure Blob Storage).
+
+2. **Event-Driven Decoupling (`s3:ObjectCreated`)**:
+   - Once the upload completes, S3 automatically triggers an **`s3:ObjectCreated`** event notification.
+   - The event routes into an **Amazon SQS** queue (or AWS EventBridge / Apache Kafka topic), completely decoupling file ingestion from processing.
+
+3. **Autonomous Worker Fleet & Memory-Efficient Streaming**:
+   - Background worker processes (e.g., Celery, ARQ, Temporal, or AWS ECS/Fargate tasks) consume tasks from the queue.
+   - Workers download and stream the CSV **chunk-by-chunk** using generator-based chunked readers (or Polars/PyArrow streaming), processing files of arbitrary size with constant, low RAM usage (`O(1)` memory).
+
+4. **Durable Persistence & Distributed Throttling**:
+   - Batch progress and row states are written to a durable database (**PostgreSQL / DynamoDB**).
+   - Upstream API rate limits are enforced across multi-node worker clusters using a **distributed Redis token-bucket rate limiter** to prevent downstream 429 errors.
+

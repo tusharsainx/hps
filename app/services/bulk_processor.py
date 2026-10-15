@@ -17,10 +17,6 @@ from app.services.batch_repository import (
     BaseBatchRepository,
     get_batch_repository,
 )
-from app.services.progress_broadcaster import (
-    ProgressBroadcaster,
-    get_progress_broadcaster,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +28,11 @@ class BulkProcessor:
         self,
         client: Optional[HospitalClient] = None,
         repository: Optional[BaseBatchRepository] = None,
-        broadcaster: Optional[ProgressBroadcaster] = None,
         settings: Optional[Settings] = None,
     ):
         self.settings = settings or get_settings()
         self.client = client or HospitalClient(settings=self.settings)
         self.repository = repository or get_batch_repository()
-        self.broadcaster = broadcaster or get_progress_broadcaster()
         self.concurrency_limit = self.settings.CONCURRENCY_LIMIT
 
     async def process_batch(
@@ -52,7 +46,6 @@ class BulkProcessor:
 
         # Initialize repository state
         batch = self.repository.create_batch(batch_id=batch_id, records=records)
-        await self.broadcaster.broadcast(batch_id, batch.to_progress_response())
 
         semaphore = asyncio.Semaphore(self.concurrency_limit)
 
@@ -91,12 +84,6 @@ class BulkProcessor:
                         row=rec.row,
                         error_message=f"Internal failure: {str(exc)}",
                     )
-                finally:
-                    current_batch = self.repository.get_batch(batch_id)
-                    if current_batch:
-                        await self.broadcaster.broadcast(
-                            batch_id, current_batch.to_progress_response()
-                        )
 
         # Run creation tasks with bounded concurrency
         await asyncio.gather(*[_worker(rec) for rec in records])
@@ -125,7 +112,6 @@ class BulkProcessor:
         self.repository.complete_batch(batch_id=batch_id, activated=activated)
         final_state = self.repository.get_batch(batch_id)
         if final_state:
-            await self.broadcaster.broadcast(batch_id, final_state.to_progress_response())
             return final_state.to_bulk_response()
 
         raise RuntimeError(f"Failed to finalize batch {batch_id}.")
@@ -192,10 +178,6 @@ class BulkProcessor:
                             row=rec.row,
                             error_message=str(exc),
                         )
-                    finally:
-                        b = self.repository.get_batch(batch_id)
-                        if b:
-                            await self.broadcaster.broadcast(batch_id, b.to_progress_response())
 
             await asyncio.gather(*[_retry_worker(r) for r in records_to_retry])
 
@@ -220,7 +202,6 @@ class BulkProcessor:
         self.repository.complete_batch(batch_id=batch_id, activated=activated)
         final_state = self.repository.get_batch(batch_id)
         if final_state:
-            await self.broadcaster.broadcast(batch_id, final_state.to_progress_response())
             return final_state.to_bulk_response()
 
         raise RuntimeError(f"Failed to finalize resumed batch {batch_id}.")

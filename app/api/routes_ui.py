@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.config import get_settings
 from app.services.hospital_client import HospitalClient
 
-router = APIRouter(tags=["UI & Health"])
+router = APIRouter()
 
 STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "static"))
 

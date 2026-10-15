@@ -4,11 +4,9 @@ import logging
 from typing import Optional
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     File,
     HTTPException,
-    Query,
     UploadFile,
     status,
 )
@@ -48,15 +46,10 @@ def get_bulk_processor(
 )
 async def bulk_create_hospitals(
     file: UploadFile = File(..., description="CSV file with columns: name,address,phone"),
-    background: bool = Query(
-        False,
-        description="If true, returns 202 immediately and processes batch in the background.",
-    ),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     settings: Settings = Depends(get_settings),
     processor: BulkProcessor = Depends(get_bulk_processor),
 ):
-    """Bulk create hospitals from CSV upload."""
+    """Bulk create hospitals from CSV upload (asynchronous non-blocking execution by default)."""
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -82,16 +75,7 @@ async def bulk_create_hospitals(
             },
         )
 
-    if background:
-        # Background mode: initialize batch and process asynchronously
-        import uuid
-        batch_id = str(uuid.uuid4())
-        repo = get_batch_repository()
-        batch = repo.create_batch(batch_id, records)
-        background_tasks.add_task(processor.process_batch, records, batch_id)
-        return batch.to_bulk_response()
-
-    # Synchronous mode (Standard requirement): wait for full execution
+    # Asynchronous concurrent execution by default
     try:
         response = await processor.process_batch(records)
         return response

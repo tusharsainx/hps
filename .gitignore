@@ -50,3 +50,7 @@ htmlcov/
 # OS generated
 .DS_Store
 Thumbs.db
+
+# Local documentation (kept locally, not committed)
+API_DEEP_DIVE.md
+WALKTHROUGH.md

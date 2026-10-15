@@ -226,36 +226,29 @@ function stopTimer(finalSeconds) {
   }
 }
 
-// WebSocket Connection
-function connectWebSocket(batchId) {
-  if (activeWebSocket) {
-    activeWebSocket.close();
-  }
+// Status Polling Engine
+let pollInterval = null;
 
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${proto}//${window.location.host}/ws/batches/${batchId}`;
-  activeWebSocket = new WebSocket(url);
-
+function pollBatch(batchId) {
+  if (pollInterval) clearInterval(pollInterval);
   wsIndicator.querySelector('.ws-dot').className = 'ws-dot connected';
-  wsText.textContent = 'WebSocket Live Streaming';
+  wsText.textContent = 'Polling Status';
 
-  activeWebSocket.onmessage = (event) => {
+  pollInterval = setInterval(async () => {
     try {
-      const data = JSON.parse(event.data);
+      const res = await fetch(`/hospitals/bulk/${batchId}`);
+      if (!res.ok) return;
+      const data = await res.json();
       updateBatchUI(data);
+      if (['activated', 'completed', 'partially_failed', 'failed'].includes(data.status)) {
+        clearInterval(pollInterval);
+        wsIndicator.querySelector('.ws-dot').className = 'ws-dot';
+        wsText.textContent = 'Batch Finalized';
+      }
     } catch (e) {
-      console.error('WS parse error:', e);
+      console.error('Polling error:', e);
     }
-  };
-
-  activeWebSocket.onclose = () => {
-    wsIndicator.querySelector('.ws-dot').className = 'ws-dot';
-    wsText.textContent = 'WebSocket Disconnected';
-  };
-
-  activeWebSocket.onerror = (err) => {
-    console.error('WS error:', err);
-  };
+  }, 500);
 }
 
 // Update UI elements based on batch progress
@@ -370,11 +363,6 @@ btnProcess.addEventListener('click', async () => {
     updateBatchUI(data);
     stopTimer(data.processing_time_seconds);
     jsonViewer.textContent = JSON.stringify(data, null, 2);
-
-    // If there were partial failures, connect WebSocket to allow live updates on resume
-    if (data.batch_id) {
-      connectWebSocket(data.batch_id);
-    }
   } catch (err) {
     stopTimer();
     validationBox.classList.remove('hidden');

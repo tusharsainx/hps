@@ -104,10 +104,6 @@ openapi_tags = [
         "description": "Polling endpoints to monitor batch progress, execution metrics, and list historical batches.",
     },
     {
-        "name": "Real-Time Progress",
-        "description": "WebSocket endpoint streaming real-time per-hospital progress events.",
-    },
-    {
         "name": "Monitoring",
         "description": "Health check probes for service availability and upstream directory connectivity.",
     },
