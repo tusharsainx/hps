@@ -165,7 +165,7 @@ class HospitalClient:
         """Verify upstream API health status."""
         try:
             client = await self._get_client()
-            resp = await client.get(f"{self.base_url}/", timeout=5.0)
+            resp = await client.get("/", timeout=15.0)
             return resp.status_code == 200
         except Exception as exc:
             logger.error("Health check to upstream API failed: %s", exc)

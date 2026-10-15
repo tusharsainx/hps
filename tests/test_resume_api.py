@@ -21,14 +21,15 @@ async def test_resume_failed_bulk_operation(async_client):
     )
 
     call_index = 0
+    resume_mode = False
 
     def mock_create(request):
         nonlocal call_index
         import json
         call_index += 1
         body = json.loads(request.content)
-        # Force Gamma Care to fail initially
-        if body["name"] == "Gamma Care" and call_index <= 3:
+        # Gamma Care fails during initial batch processing across all retries
+        if body["name"] == "Gamma Care" and not resume_mode:
             return httpx.Response(500, text="Temporary DB lock")
         return httpx.Response(
             200,
@@ -67,6 +68,7 @@ async def test_resume_failed_bulk_operation(async_client):
     assert data1["batch_activated"] is False
 
     # 2. Call Resume on this batch ID
+    resume_mode = True
     resp2 = await async_client.post(f"/hospitals/bulk/{batch_id}/resume")
     assert resp2.status_code == 200
     data2 = resp2.json()

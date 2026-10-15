@@ -39,8 +39,18 @@ class BatchRecordInternal:
             return round(self.end_time - self.start_time, 2)
         return round(time.time() - self.start_time, 2)
 
+    def sync_counters(self):
+        """Ensure processed and failed counters match actual row statuses."""
+        self.processed_hospitals = sum(
+            1 for h in self.hospitals.values() if h.status in ("created", "created_and_activated")
+        )
+        self.failed_hospitals = sum(
+            1 for h in self.hospitals.values() if h.status == "failed"
+        )
+
     def to_bulk_response(self) -> BulkProcessResponse:
         """Export state in the exact response format required by the specification."""
+        self.sync_counters()
         items = [self.hospitals[r] for r in sorted(self.hospitals.keys())]
         return BulkProcessResponse(
             batch_id=self.batch_id,
@@ -54,6 +64,7 @@ class BatchRecordInternal:
 
     def to_progress_response(self) -> BatchProgressResponse:
         """Export state for progress polling and WebSocket updates."""
+        self.sync_counters()
         items = [self.hospitals[r] for r in sorted(self.hospitals.keys())]
         completed = self.processed_hospitals + self.failed_hospitals
         pct = round((completed / self.total_hospitals * 100.0) if self.total_hospitals > 0 else 0.0, 1)
@@ -143,13 +154,10 @@ class InMemoryBatchRepository(BaseBatchRepository):
             if not batch:
                 return
             if row in batch.hospitals:
-                # If it was previously failed and is now retried, decrement failed
-                if batch.hospitals[row].status == "failed":
-                    batch.failed_hospitals = max(0, batch.failed_hospitals - 1)
                 batch.hospitals[row].hospital_id = hospital_id
                 batch.hospitals[row].status = "created"
                 batch.hospitals[row].error = None
-                batch.processed_hospitals += 1
+                batch.sync_counters()
 
     def update_row_failure(self, batch_id: str, row: int, error_message: str):
         with self._lock:
@@ -159,7 +167,7 @@ class InMemoryBatchRepository(BaseBatchRepository):
             if row in batch.hospitals:
                 batch.hospitals[row].status = "failed"
                 batch.hospitals[row].error = error_message
-                batch.failed_hospitals += 1
+                batch.sync_counters()
 
     def complete_batch(self, batch_id: str, activated: bool):
         with self._lock:
