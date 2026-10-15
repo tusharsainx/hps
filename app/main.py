@@ -16,7 +16,6 @@ import os
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
 from app.config import get_settings
@@ -31,7 +30,6 @@ logging.basicConfig(
 logger = logging.getLogger("app.main")
 
 settings = get_settings()
-STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
 
 
 async def _keep_alive_heartbeat_loop():
@@ -128,10 +126,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Mount static files if directory exists
-if os.path.exists(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Include all API routes
 app.include_router(api_router)

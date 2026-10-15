@@ -11,7 +11,7 @@ It reliably handles multipart CSV file uploads, validates data formats and const
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Client as Client / UI Dashboard
+    actor Client as API Consumer / Swagger
     participant API as FastAPI Ingestion Layer
     participant Val as CSV Validator Service
     participant Store as Batch State Repository
@@ -83,7 +83,6 @@ The codebase is built following clean architecture and **SOLID** design principl
 * **Standalone CSV Validation**: `POST /hospitals/bulk/validate` inspects syntax, column headers, empty fields, and row counts before executing bulk operations.
 * **Batch Rollback**: `DELETE /hospitals/bulk/{batch_id}` cleans up batches from the upstream directory.
 * **Dockerization**: Production-ready multi-stage `Dockerfile` and `docker-compose.yml`.
-* **Interactive Web Dashboard**: Modern UI mounted at `/` for testing CSV uploads, polling progress bars, inspecting row states, and testing resumption.
 
 ---
 
@@ -205,7 +204,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Access the interactive dashboard at **`http://localhost:8000`** and Swagger OpenAPI documentation at **`http://localhost:8000/docs`**.
+Access the interactive Swagger OpenAPI documentation at **`http://localhost:8000/docs`** (root **`http://localhost:8000`** automatically redirects to `/docs`).
 
 ---
 
