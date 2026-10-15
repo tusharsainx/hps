@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paribus — Hospital Bulk Processing System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navigation -->
+    <header class="top-nav">
+      <div class="nav-brand">
+        <div class="brand-logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v20M2 12h20M7 7l10 10M17 7l-10 10"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">Paribus HPS</span>
+          <span class="brand-subtitle">Hospital Bulk Processing System</span>
+        </div>
+      </div>
+      <div class="nav-badges">
+        <div class="badge status-badge" id="api-status-badge">
+          <span class="status-dot"></span>
+          <span id="api-status-text">Checking API...</span>
+        </div>
+        <a href="/docs" target="_blank" class="nav-link docs-link">Interactive OpenAPI Docs ↗</a>
+      </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="main-container">
+      <!-- Hero / Stats Bar -->
+      <section class="metrics-grid">
+        <div class="metric-card">
+          <span class="metric-label">Max Batch Limit</span>
+          <span class="metric-value">20 Hospitals</span>
+          <span class="metric-sub">Strict Row Limit</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Bounded Concurrency</span>
+          <span class="metric-value">10 Workers</span>
+          <span class="metric-sub">Async Non-blocking</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Connection Pooling</span>
+          <span class="metric-value">Keep-Alive</span>
+          <span class="metric-sub">50 Max / 20 Idle</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Resilience</span>
+          <span class="metric-value">Retry + Backoff</span>
+          <span class="metric-sub">Atomic Batch Activation</span>
+        </div>
+      </section>
+
+      <!-- Grid: Upload & Controls vs Real-time Progress -->
+      <div class="workflow-grid">
+        <!-- Left: Upload & Input Card -->
+        <section class="card upload-card">
+          <div class="card-header">
+            <h2>1. Upload Hospital CSV</h2>
+            <span class="badge">CSV (name, address, phone)</span>
+          </div>
+
+          <!-- Dropzone -->
+          <div class="dropzone" id="csv-dropzone">
+            <input type="file" id="csv-file-input" accept=".csv" />
+            <div class="dropzone-content">
+              <svg class="upload-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+              </svg>
+              <p class="drop-text">Drag and drop CSV here or <span class="highlight">browse</span></p>
+              <span class="drop-hint">Format: name, address, phone (max 20 rows)</span>
+            </div>
+          </div>
+
+          <!-- Selected file banner -->
+          <div class="selected-file-banner hidden" id="file-banner">
+            <div class="file-info">
+              <span class="file-name" id="file-name-display">sample.csv</span>
+              <span class="file-size" id="file-size-display">1.2 KB</span>
+            </div>
+            <button class="btn-clear" id="btn-clear-file" title="Remove file">✕</button>
+          </div>
+
+          <!-- Quick Samples -->
+          <div class="sample-buttons">
+            <span class="samples-title">Load Sample Data:</span>
+            <div class="sample-pills">
+              <button class="pill-btn" id="btn-load-valid-5">Valid (5 Rows)</button>
+              <button class="pill-btn" id="btn-load-valid-20">Valid (20 Rows)</button>
+              <button class="pill-btn danger" id="btn-load-invalid-25">Exceed Limit (25 Rows)</button>
+              <button class="pill-btn warning" id="btn-load-invalid-headers">Malformed Headers</button>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-row">
+            <button class="btn btn-secondary" id="btn-validate" disabled>
+              <span class="btn-text">Pre-Validate CSV</span>
+            </button>
+            <button class="btn btn-primary" id="btn-process" disabled>
+              <span class="btn-text">Execute Bulk Upload</span>
+            </button>
+          </div>
+
+          <!-- Pre-validation Feedback Box -->
+          <div class="validation-box hidden" id="validation-box">
+            <div class="validation-header">
+              <span id="validation-title">Validation Results</span>
+            </div>
+            <div id="validation-details"></div>
+          </div>
+        </section>
+
+        <!-- Right: Real-time Progress & Status -->
+        <section class="card progress-card">
+          <div class="card-header">
+            <h2>2. Processing Progress</h2>
+            <div class="ws-indicator" id="ws-indicator">
+              <span class="ws-dot"></span>
+              <span id="ws-text">WebSocket Idle</span>
+            </div>
+          </div>
+
+          <!-- Batch Meta Bar -->
+          <div class="batch-meta-bar" id="batch-meta-bar">
+            <div class="meta-item">
+              <span class="meta-label">Batch ID:</span>
+              <span class="meta-value mono" id="disp-batch-id">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Status:</span>
+              <span class="meta-value badge" id="disp-batch-status">Idle</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Elapsed:</span>
+              <span class="meta-value mono" id="disp-batch-time">0.00s</span>
+            </div>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="progress-container">
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%"></div>
+            </div>
+            <div class="progress-numbers">
+              <span id="progress-percentage-text">0%</span>
+              <span id="progress-counts-text">0 / 0 Processed</span>
+            </div>
+          </div>
+
+          <!-- Progress Stats Grid -->
+          <div class="stats-mini-grid">
+            <div class="mini-stat">
+              <span class="stat-num text-blue" id="stat-total">0</span>
+              <span class="stat-lbl">Total</span>
+            </div>
+            <div class="mini-stat">
+              <span class="stat-num text-green" id="stat-processed">0</span>
+              <span class="stat-lbl">Processed</span>
+            </div>
+            <div class="mini-stat">
+              <span class="stat-num text-red" id="stat-failed">0</span>
+              <span class="stat-lbl">Failed</span>
+            </div>
+            <div class="mini-stat">
+              <span class="stat-num text-purple" id="stat-activated">No</span>
+              <span class="stat-lbl">Activated</span>
+            </div>
+          </div>
+
+          <!-- Batch Control Actions -->
+          <div class="batch-actions hidden" id="batch-actions">
+            <button class="btn btn-warning" id="btn-resume-batch">
+              ↺ Resume Failed Batch
+            </button>
+            <button class="btn btn-danger-outline" id="btn-delete-batch">
+              🗑 Rollback / Delete Batch
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <!-- Live Hospital Records Table -->
+      <section class="card table-card">
+        <div class="card-header">
+          <h2>3. Hospital Records Breakdown</h2>
+          <span class="hint-text">Live updates via WebSocket</span>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table" id="hospitals-table">
+            <thead>
+              <tr>
+                <th style="width: 60px;">Row</th>
+                <th style="width: 120px;">Hospital ID</th>
+                <th>Hospital Name</th>
+                <th>Address</th>
+                <th>Phone</th>
+                <th style="width: 180px;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="hospitals-tbody">
+              <tr class="empty-row">
+                <td colspan="6">No batch executed yet. Upload a CSV to view processing results.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Raw JSON Response Viewer -->
+      <section class="card json-card">
+        <div class="card-header">
+          <h2>4. Exact API Response Payload</h2>
+          <button class="btn-copy" id="btn-copy-json">Copy JSON</button>
+        </div>
+        <pre class="json-viewer mono" id="json-viewer">// Complete JSON response adhering to specification will appear here...</pre>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <span>Paribus Python Challenge — Hospital Bulk Processing System</span>
+      <span>FastAPI + Async HTTPX + WebSockets + Pydantic v2</span>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

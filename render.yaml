@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: paribus-hospital-bulk-processor
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: HOSPITAL_API_BASE_URL
+        value: https://hospital-directory.onrender.com
+      - key: CONCURRENCY_LIMIT
+        value: "10"
+      - key: MAX_CSV_ROWS
+        value: "20"
+      - key: REQUEST_TIMEOUT_SECONDS
+        value: "15.0"
+      - key: MAX_RETRIES
+        value: "3"

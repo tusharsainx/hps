@@ -1,0 +1,4 @@
+name,address,phone
+Valid Hospital,100 Health Way,555-1000
+,Missing Name Hospital,555-2000
+Missing Address Hospital,,555-3000

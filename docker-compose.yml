@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  bulk-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: paribus_hospital_bulk_processor
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOSPITAL_API_BASE_URL=https://hospital-directory.onrender.com
+      - CONCURRENCY_LIMIT=10
+      - MAX_CSV_ROWS=20
+      - REQUEST_TIMEOUT_SECONDS=15.0
+      - MAX_RETRIES=3
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
