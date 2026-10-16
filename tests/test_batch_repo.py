@@ -50,3 +50,35 @@ def test_in_memory_repository_lifecycle(sample_records):
     assert repo.get_stats()["total_stored_batches"] == 0
     assert repo.get_batch(batch_id) is None
 
+
+def test_in_memory_repository_lru_eviction(sample_records):
+    """Test that LRU eviction removes the oldest batch when max_capacity is reached."""
+    repo = InMemoryBatchRepository(max_capacity=2)
+    repo.create_batch("batch-1", sample_records)
+    repo.create_batch("batch-2", sample_records)
+    assert repo.get_stats()["total_stored_batches"] == 2
+    assert repo.get_batch("batch-1") is not None
+    assert repo.get_batch("batch-2") is not None
+
+    # Inserting 3rd batch evicts the oldest (batch-1)
+    repo.create_batch("batch-3", sample_records)
+    assert repo.get_stats()["total_stored_batches"] == 2
+    assert repo.get_batch("batch-1") is None
+    assert repo.get_batch("batch-2") is not None
+    assert repo.get_batch("batch-3") is not None
+
+
+def test_in_memory_repository_ttl_eviction(sample_records):
+    """Test that completed batches older than TTL are automatically evicted."""
+    repo = InMemoryBatchRepository(max_capacity=10, ttl_seconds=10)
+    batch = repo.create_batch("batch-old", sample_records)
+    repo.complete_batch("batch-old", activated=True)
+
+    # Backdate start_time to simulate 15 seconds ago (> 10s TTL)
+    batch.start_time = batch.start_time - 15
+
+    # Creating a new batch triggers cleanup
+    repo.create_batch("batch-new", sample_records)
+    assert repo.get_batch("batch-old") is None
+    assert repo.get_batch("batch-new") is not None
+

@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # In-memory batch cache limit (evicts oldest when full)
     MAX_BATCH_STORE_SIZE: int = 10000
+    BATCH_TTL_SECONDS: int = 86400  # Automatically evicts completed batches older than 24 hours
 
     # Render Keep-Alive Heartbeat (prevents free-tier sleep after 15 min inactivity)
     KEEP_ALIVE_ENABLED: bool = True

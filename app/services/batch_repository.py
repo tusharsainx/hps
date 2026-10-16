@@ -115,18 +115,33 @@ class BaseBatchRepository(ABC):
 
 
 class InMemoryBatchRepository(BaseBatchRepository):
-    """Thread-safe in-memory batch repository with bounded LRU eviction."""
+    """Thread-safe in-memory batch repository with bounded LRU eviction and TTL cleanup."""
 
-    def __init__(self, max_capacity: int = 10000):
+    def __init__(self, max_capacity: int = 10000, ttl_seconds: int = 86400):
         self._lock = threading.Lock()
         self._store: OrderedDict[str, BatchRecordInternal] = OrderedDict()
         self.max_capacity = max_capacity
+        self.ttl_seconds = ttl_seconds
+
+    def _evict_expired_or_overflow(self):
+        """Evict batches older than ttl_seconds and enforce bounded capacity."""
+        now = time.time()
+        # 1. Prune expired batches older than TTL (ignoring batches still actively processing)
+        if self.ttl_seconds > 0:
+            expired_keys = [
+                k for k, b in self._store.items()
+                if (now - b.start_time) > self.ttl_seconds and b.status != BatchStatus.PROCESSING
+            ]
+            for k in expired_keys:
+                self._store.pop(k, None)
+
+        # 2. Enforce LRU eviction if capacity is reached
+        while len(self._store) >= self.max_capacity:
+            self._store.popitem(last=False)
 
     def create_batch(self, batch_id: str, records: List[HospitalRecord]) -> BatchRecordInternal:
         with self._lock:
-            # Enforce LRU eviction if capacity is reached
-            if len(self._store) >= self.max_capacity:
-                self._store.popitem(last=False)
+            self._evict_expired_or_overflow()
 
             batch = BatchRecordInternal(batch_id=batch_id, total_hospitals=len(records))
             batch.status = BatchStatus.PROCESSING
@@ -210,6 +225,7 @@ class InMemoryBatchRepository(BaseBatchRepository):
             return {
                 "total_stored_batches": len(self._store),
                 "max_capacity": self.max_capacity,
+                "ttl_seconds": self.ttl_seconds,
                 "active_processing_batches": sum(
                     1 for b in self._store.values() if b.status == BatchStatus.PROCESSING
                 ),
@@ -226,5 +242,8 @@ def get_batch_repository() -> InMemoryBatchRepository:
     if _default_repo is None:
         from app.config import get_settings
         settings = get_settings()
-        _default_repo = InMemoryBatchRepository(max_capacity=settings.MAX_BATCH_STORE_SIZE)
+        _default_repo = InMemoryBatchRepository(
+            max_capacity=settings.MAX_BATCH_STORE_SIZE,
+            ttl_seconds=settings.BATCH_TTL_SECONDS,
+        )
     return _default_repo
