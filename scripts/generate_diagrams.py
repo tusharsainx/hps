@@ -98,10 +98,10 @@ def render_hld():
     draw_arrow(32, 55, 36, 55, "Valid Records", color="#34d399")
     draw_arrow(64, 55, 68, 55, "HTTP Calls", color="#34d399")
 
-    # Background Tasks & Heartbeat
+    # Background Tasks & Resilience
     draw_component(36, 32, 28, 12, "Concurrency Controller", "• asyncio.Semaphore(10)\n• Bounded HTTP concurrency\n• Prevents downstream 429s", bg="#172554", border="#3b82f6")
     draw_component(8, 32, 24, 12, "BackgroundTasks Runner", "• Non-blocking async execution\n• Immediate 202 client return\n• Safe background lifecycle", bg="#172554", border="#3b82f6")
-    draw_component(68, 32, 24, 12, "Resilience & Heartbeat", "• Retries 502/503/504 errors\n• Keep-alive heartbeat ping\n• Clean rollback / DELETE support", bg="#172554", border="#3b82f6")
+    draw_component(68, 32, 24, 12, "Resilience & Rollback", "• Retries 502/503/504 errors\n• Exponential backoff + jitter\n• Clean rollback / DELETE support", bg="#172554", border="#3b82f6")
 
     draw_arrow(50, 51, 50, 44, "Throttle", color="#38bdf8")
     draw_arrow(36, 54, 20, 44, "Enqueue Task", color="#38bdf8")

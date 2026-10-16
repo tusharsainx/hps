@@ -26,11 +26,6 @@ class Settings(BaseSettings):
     MAX_BATCH_STORE_SIZE: int = 10000
     BATCH_TTL_SECONDS: int = 86400  # Automatically evicts completed batches older than 24 hours
 
-    # Render Keep-Alive Heartbeat (prevents free-tier sleep after 15 min inactivity)
-    KEEP_ALIVE_ENABLED: bool = True
-    KEEP_ALIVE_INTERVAL_SECONDS: int = 600  # Ping every 10 min (600s < 900s Render limit)
-    SELF_PING_URL: Optional[str] = None     # Optional self URL for deployed instances
-
     # Application Metadata
     APP_TITLE: str = "Hospital Bulk Processing System"
     APP_DESCRIPTION: str = (

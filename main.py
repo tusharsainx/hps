@@ -31,62 +31,14 @@ logger = logging.getLogger("main")
 settings = get_settings()
 
 
-async def _keep_alive_heartbeat_loop():
-    """Periodically ping upstream Render API to prevent free-tier sleep (15 min inactivity timeout)."""
-    # Brief initial pause after server boot before firing first keep-alive ping
-    await asyncio.sleep(5)
-    client = HospitalClient(settings=settings)
-    try:
-        while True:
-            try:
-                upstream_ok = await client.check_health()
-                logger.info(
-                    "[Heartbeat] Upstream Render API ping: %s (URL: %s)",
-                    "ONLINE" if upstream_ok else "UNREACHABLE",
-                    settings.HOSPITAL_API_BASE_URL,
-                )
-            except Exception as exc:
-                logger.warning("[Heartbeat] Upstream ping failed: %s", exc)
-
-            if settings.SELF_PING_URL:
-                try:
-                    c = await client._get_client()
-                    resp = await c.get(settings.SELF_PING_URL, timeout=10.0)
-                    logger.info("[Heartbeat] Self ping status: %d (URL: %s)", resp.status_code, settings.SELF_PING_URL)
-                except Exception as exc:
-                    logger.warning("[Heartbeat] Self ping failed: %s", exc)
-
-            await asyncio.sleep(settings.KEEP_ALIVE_INTERVAL_SECONDS)
-    except asyncio.CancelledError:
-        logger.info("[Heartbeat] Keep-Alive loop terminated cleanly.")
-    finally:
-        await client.close()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan context manager with automated Keep-Alive heartbeat."""
+    """Application lifespan context manager."""
     logger.info("Starting %s v%s...", settings.APP_TITLE, settings.APP_VERSION)
     logger.info("Connected to Upstream API: %s", settings.HOSPITAL_API_BASE_URL)
     logger.info("Max CSV Rows: %d | Concurrency Limit: %d", settings.MAX_CSV_ROWS, settings.CONCURRENCY_LIMIT)
 
-    heartbeat_task = None
-    if settings.KEEP_ALIVE_ENABLED:
-        heartbeat_task = asyncio.create_task(_keep_alive_heartbeat_loop())
-        logger.info(
-            "Render Keep-Alive Heartbeat active (interval: %ds / %.1f min).",
-            settings.KEEP_ALIVE_INTERVAL_SECONDS,
-            settings.KEEP_ALIVE_INTERVAL_SECONDS / 60,
-        )
-
     yield
-
-    if heartbeat_task:
-        heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
 
     logger.info("Shutting down %s...", settings.APP_TITLE)
 

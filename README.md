@@ -28,7 +28,7 @@ flowchart TB
     subgraph Core["3. Core Domain & Orchestration Layer"]
         VAL["CsvValidator<br/>• Stream parsing (DictReader)<br/>• Header schema check (name, address, phone)<br/>• Max 20 rows enforcement<br/>• Whitespace & UTF-8 BOM normalization"]
         PROC["BulkProcessor (Orchestrator)<br/>• Non-blocking background worker dispatch<br/>• Delta resume calculator (upstream diffing)<br/>• Concurrency control (asyncio.Semaphore=10)<br/>• Atomic batch activation coordinator"]
-        CLI["HospitalClient (HTTPX AsyncClient)<br/>• Keep-Alive connection pool (50 max, 20 idle)<br/>• Exponential backoff + full jitter (3 retries)<br/>• Render free-tier keep-alive heartbeat loop"]
+        CLI["HospitalClient (HTTPX AsyncClient)<br/>• Keep-Alive connection pool (50 max, 20 idle)<br/>• Exponential backoff + full jitter (3 retries)<br/>• Non-blocking async HTTP worker calls"]
     end
 
     subgraph State["4. State & Repository Layer"]
@@ -417,9 +417,9 @@ Deploying to Render as a Web Service:
    - `MAX_CSV_ROWS` = `20`
    - `REQUEST_TIMEOUT_SECONDS` = `15.0`
    - `MAX_RETRIES` = `3`
-   - `KEEP_ALIVE_ENABLED` = `true`
-   - `KEEP_ALIVE_INTERVAL_SECONDS` = `600`
 5. Click **Deploy Web Service**. Your service will be live in ~2 minutes!
+
+> **💡 Keeping Render Free Tier Active**: Render free-tier instances sleep after 15 minutes of inactivity. You can set up a free monitor (e.g. via [UptimeRobot](https://uptimerobot.com/)) targeting your public `/health` endpoint every 5–10 minutes to prevent sleep.
 
 ---
 
