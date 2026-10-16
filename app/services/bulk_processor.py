@@ -44,8 +44,10 @@ class BulkProcessor:
         if not batch_id:
             batch_id = str(uuid.uuid4())
 
-        # Initialize repository state
-        batch = self.repository.create_batch(batch_id=batch_id, records=records)
+        # Initialize repository state if not already initialized
+        batch = self.repository.get_batch(batch_id)
+        if not batch:
+            batch = self.repository.create_batch(batch_id=batch_id, records=records)
 
         semaphore = asyncio.Semaphore(self.concurrency_limit)
 

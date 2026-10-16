@@ -92,15 +92,22 @@ The codebase is built following clean architecture and **SOLID** design principl
 * **Endpoint**: `POST /hospitals/bulk`
 * **Content-Type**: `multipart/form-data`
 * **Form Field**: `file` (CSV file with columns: `name,address,phone`)
-* **Execution**: Asynchronous concurrent non-blocking execution by default (`asyncio.Semaphore(10)`)
+* **Default Execution**: Returns **HTTP 202 Accepted** immediately (<15ms) and executes processing asynchronously in the background. Clients poll `GET /hospitals/bulk/{batch_id}` for live progress.
+* **Synchronous Execution**: Pass `?sync=true` to block until all records are created and batch is activated (**HTTP 200 OK**).
 
-#### Example Request:
+#### Example Background Request (Default - Instant Response):
 ```bash
 curl -X POST "http://localhost:8000/hospitals/bulk" \
   -F "file=@sample_data/valid_hospitals_5.csv"
 ```
 
-#### Example Response (200 OK):
+#### Example Synchronous Request (Blocks until Activated):
+```bash
+curl -X POST "http://localhost:8000/hospitals/bulk?sync=true" \
+  -F "file=@sample_data/valid_hospitals_5.csv"
+```
+
+#### Example Synchronous / Completed Response (200 OK):
 ```json
 {
   "batch_id": "550e8400-e29b-41d4-a716-446655440000",

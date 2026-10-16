@@ -2,11 +2,15 @@
 
 import logging
 from typing import Optional
+import uuid
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     HTTPException,
+    Query,
+    Response,
     UploadFile,
     status,
 )
@@ -36,20 +40,37 @@ def get_bulk_processor(
 @router.post(
     "/bulk",
     response_model=BulkProcessResponse,
-    status_code=status.HTTP_200_OK,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Bulk Create Hospitals from CSV",
     description=(
         "Upload a multipart CSV file containing hospital records (name, address, phone). "
-        "Creates each hospital in the upstream directory API with a unique batch ID, "
-        "and activates the batch once all records are successfully created."
+        "By default, returns HTTP 202 Accepted immediately and processes hospital creation and atomic activation "
+        "asynchronously in the background. Clients can query `GET /hospitals/bulk/{batch_id}` to track real-time progress. "
+        "Pass `?sync=true` if you wish to block until completion and receive HTTP 200."
     ),
+    responses={
+        202: {
+            "description": "Batch accepted for background execution. Poll GET /hospitals/bulk/{batch_id} for progress.",
+            "model": BulkProcessResponse,
+        },
+        200: {
+            "description": "Synchronous execution completed (when ?sync=true).",
+            "model": BulkProcessResponse,
+        },
+    },
 )
 async def bulk_create_hospitals(
+    response: Response,
     file: UploadFile = File(..., description="CSV file with columns: name,address,phone"),
+    sync: bool = Query(
+        False,
+        description="If true, blocks until the entire batch finishes processing and returns 200 OK. Default is false (returns 202 Accepted immediately).",
+    ),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     settings: Settings = Depends(get_settings),
     processor: BulkProcessor = Depends(get_bulk_processor),
 ):
-    """Bulk create hospitals from CSV upload (asynchronous non-blocking execution by default)."""
+    """Bulk create hospitals from CSV upload (asynchronous background execution by default)."""
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -75,16 +96,26 @@ async def bulk_create_hospitals(
             },
         )
 
-    # Asynchronous concurrent execution by default
-    try:
-        response = await processor.process_batch(records)
-        return response
-    except Exception as exc:
-        logger.exception("Bulk processing pipeline encountered an unexpected error: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"message": f"Internal processing error: {str(exc)}"},
-        )
+    if sync:
+        # Synchronous execution mode: wait for completion and return 200 OK
+        response.status_code = status.HTTP_200_OK
+        try:
+            return await processor.process_batch(records)
+        except Exception as exc:
+            logger.exception("Bulk processing pipeline encountered an unexpected error: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"message": f"Internal processing error: {str(exc)}"},
+            )
+
+    # Default: Non-blocking background mode (immediate 202 Accepted response)
+    batch_id = str(uuid.uuid4())
+    repo = get_batch_repository()
+    batch = repo.create_batch(batch_id, records)
+    background_tasks.add_task(processor.process_batch, records, batch_id)
+
+    response.status_code = status.HTTP_202_ACCEPTED
+    return batch.to_bulk_response()
 
 
 @router.post(

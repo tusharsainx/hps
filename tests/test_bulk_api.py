@@ -36,26 +36,41 @@ async def test_bulk_create_hospitals_success(async_client, valid_5_csv_bytes):
     )
 
     files = {"file": ("test_hospitals.csv", valid_5_csv_bytes, "text/csv")}
+    
+    # 1. Test background mode (default): returns 202 Accepted immediately
     response = await async_client.post("/hospitals/bulk", files=files)
-
-    assert response.status_code == 200
+    assert response.status_code == 202
     data = response.json()
 
-    # Verify exact required response schema
     assert "batch_id" in data
+    batch_id = data["batch_id"]
     assert data["total_hospitals"] == 5
-    assert data["processed_hospitals"] == 5
-    assert data["failed_hospitals"] == 0
-    assert data["batch_activated"] is True
-    assert isinstance(data["processing_time_seconds"], float)
-    assert len(data["hospitals"]) == 5
 
-    # Verify row structure
-    first = data["hospitals"][0]
+    # Poll status endpoint for the background-processed batch
+    status_resp = await async_client.get(f"/hospitals/bulk/{batch_id}")
+    assert status_resp.status_code == 200
+    status_data = status_resp.json()
+    assert status_data["batch_id"] == batch_id
+    assert status_data["total_hospitals"] == 5
+    assert status_data["processed_hospitals"] == 5
+    assert status_data["failed_hospitals"] == 0
+    assert status_data["batch_activated"] is True
+    assert isinstance(status_data["processing_time_seconds"], float)
+    assert len(status_data["hospitals"]) == 5
+
+    first = status_data["hospitals"][0]
     assert first["row"] == 1
     assert first["name"] == "Hospital A"
     assert first["status"] == "created_and_activated"
     assert first["hospital_id"] is not None
+
+    # 2. Test synchronous mode (?sync=true): blocks and returns 200 OK directly
+    files_sync = {"file": ("test_sync.csv", valid_5_csv_bytes, "text/csv")}
+    sync_resp = await async_client.post("/hospitals/bulk?sync=true", files=files_sync)
+    assert sync_resp.status_code == 200
+    sync_data = sync_resp.json()
+    assert sync_data["batch_activated"] is True
+    assert sync_data["processed_hospitals"] == 5
 
 
 @pytest.mark.asyncio

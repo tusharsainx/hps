@@ -56,16 +56,21 @@ async def test_resume_failed_bulk_operation(async_client):
         ],
     )
 
-    # 1. Initial Upload -> Gamma Care fails, so batch should NOT be activated
+    # 1. Initial Upload -> returns 202 Accepted, background execution runs
     files = {"file": ("test.csv", csv_bytes, "text/csv")}
     resp1 = await async_client.post("/hospitals/bulk", files=files)
     data1 = resp1.json()
 
-    assert resp1.status_code == 200
+    assert resp1.status_code == 202
     batch_id = data1["batch_id"]
     assert data1["total_hospitals"] == 3
-    assert data1["failed_hospitals"] == 1
-    assert data1["batch_activated"] is False
+
+    # Check status endpoint shows Gamma Care failed
+    status_resp = await async_client.get(f"/hospitals/bulk/{batch_id}")
+    assert status_resp.status_code == 200
+    status_data = status_resp.json()
+    assert status_data["failed_hospitals"] == 1
+    assert status_data["batch_activated"] is False
 
     # 2. Call Resume on this batch ID
     resume_mode = True
