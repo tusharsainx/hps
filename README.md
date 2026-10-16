@@ -20,55 +20,56 @@ flowchart TB
     end
 
     subgraph API["2. FastAPI Ingestion & Controller Layer"]
-        R_BULK["routes_bulk.py<br/>• POST /hospitals/bulk (202 Accepted / ?sync=true)<br/>• POST /hospitals/bulk/validate<br/>• POST /hospitals/bulk/{batch_id}/resume<br/>• DELETE /hospitals/bulk/{batch_id}"]
-        R_STAT["routes_status.py<br/>• GET /hospitals/bulk/{batch_id} (Poll Progress)<br/>• GET /hospitals/bulk (List Historical Batches)"]
-        R_ROOT["routes_ui.py<br/>• GET / (Redirect to /docs)<br/>• GET /health (Health Check Probe)"]
+        R_BULK["routes_bulk.py<br/>• POST /hospitals/bulk<br/>• POST /hospitals/bulk/validate<br/>• POST /hospitals/bulk/:id/resume<br/>• DELETE /hospitals/bulk/:id"]
+        R_STAT["routes_status.py<br/>• GET /hospitals/bulk/:id<br/>• GET /hospitals/bulk"]
+        R_ROOT["routes_ui.py<br/>• GET / (Redirect to /docs)<br/>• GET /health"]
     end
 
     subgraph Core["3. Core Domain & Orchestration Layer"]
-        VAL["CsvValidator<br/>• Stream parsing (DictReader)<br/>• Header schema check (name, address, phone)<br/>• Max 20 rows enforcement<br/>• Whitespace & UTF-8 BOM normalization"]
-        PROC["BulkProcessor (Orchestrator)<br/>• Non-blocking background worker dispatch<br/>• Delta resume calculator (upstream diffing)<br/>• Concurrency control (asyncio.Semaphore=10)<br/>• Atomic batch activation coordinator"]
-        CLI["HospitalClient (HTTPX AsyncClient)<br/>• Keep-Alive connection pool (50 max, 20 idle)<br/>• Exponential backoff + full jitter (3 retries)<br/>• Non-blocking async HTTP worker calls"]
+        VAL["CsvValidator<br/>• Stream parsing (DictReader)<br/>• Header schema check<br/>• Max 20 rows enforcement<br/>• Whitespace & BOM cleaning"]
+        PROC["BulkProcessor (Orchestrator)<br/>• Non-blocking background dispatch<br/>• Delta resume calculator<br/>• Concurrency control (Semaphore=10)<br/>• Atomic batch activation coordinator"]
+        CLI["HospitalClient (HTTPX AsyncClient)<br/>• Keep-Alive connection pool<br/>• Exponential backoff + jitter<br/>• Non-blocking async workers"]
     end
 
     subgraph State["4. State & Repository Layer"]
-        REPO["InMemoryBatchRepository (Thread-Safe LRU)<br/>• threading.Lock concurrency safety<br/>• Batch metadata & row item tracking<br/>• Real-time progress metrics (percentage, counts)<br/>• Bounded LRU capacity to prevent memory leaks"]
+        REPO["InMemoryBatchRepository<br/>• Thread-safe LRU store<br/>• Batch metadata & row tracking<br/>• Real-time progress metrics<br/>• Bounded LRU capacity & TTL pruning"]
     end
 
     subgraph Upstream["5. External Hospital Directory API (Render)"]
-        EXT_CREATE["POST /hospitals/<br/>(id, active: false, creation_batch_id)"]
-        EXT_ACT["PATCH /hospitals/batch/{batch_id}/activate<br/>(Atomic activation -> active: true)"]
-        EXT_GET["GET /hospitals/?creation_batch_id={batch_id}<br/>(Query created rows for resume diff)"]
-        EXT_DEL["DELETE /hospitals/{hospital_id}<br/>(Rollback batch hospitals)"]
-        EXT_HLT["GET /health<br/>(Upstream readiness check)"]
+        EXT_CREATE["POST /hospitals/"]
+        EXT_ACT["PATCH /hospitals/batch/:id/activate"]
+        EXT_GET["GET /hospitals/?creation_batch_id=:id"]
+        EXT_DEL["DELETE /hospitals/:id"]
+        EXT_HLT["GET /health"]
     end
 
     %% Client Interactions
-    C1 -->|1. Multipart CSV Upload| R_BULK
-    C1 -->|Poll Progress / Resume / Delete| R_BULK & R_STAT
-    C2 -->|Interactive API Testing| API
+    C1 -->|"1. Multipart CSV Upload"| R_BULK
+    C1 -->|"Poll Progress / History"| R_STAT
+    C1 -->|"Resume / Delete Batch"| R_BULK
+    C2 -->|"Interactive API Testing"| R_ROOT
 
     %% Ingestion to Validation & Processing
-    R_BULK -->|2. Validate CSV| VAL
-    VAL -->|Valid Records| R_BULK
-    R_BULK -->|3. Register Batch (UUID)| REPO
-    R_BULK -->|4. Add Background Task| PROC
-    R_BULK -.->|5. Return 202 Accepted (<15ms)| C1
+    R_BULK -->|"2. Validate CSV"| VAL
+    VAL -->|"Valid Records"| R_BULK
+    R_BULK -->|"3. Register Batch UUID"| REPO
+    R_BULK -->|"4. Add Background Task"| PROC
+    R_BULK -.->|"5. Return 202 Accepted in 15ms"| C1
 
     %% Status Polling
-    R_STAT -->|Read Status & Progress| REPO
+    R_STAT -->|"Read Status & Progress"| REPO
 
     %% Core Processing & Concurrency
-    PROC -->|Update Row Statuses| REPO
-    PROC -->|Concurrent Requests (Semaphore=10)| CLI
-    R_ROOT -->|Health Probe| CLI
+    PROC -->|"Update Row Statuses"| REPO
+    PROC -->|"Concurrent Requests (Semaphore=10)"| CLI
+    R_ROOT -->|"Health Probe"| CLI
 
     %% Outbound HTTP to Render
-    CLI -->|POST /hospitals/| EXT_CREATE
-    CLI -->|PATCH /activate| EXT_ACT
-    CLI -->|GET /hospitals/| EXT_GET
-    CLI -->|DELETE /hospitals/| EXT_DEL
-    CLI -->|GET /health| EXT_HLT
+    CLI -->|"POST /hospitals/"| EXT_CREATE
+    CLI -->|"PATCH /activate"| EXT_ACT
+    CLI -->|"GET /hospitals/"| EXT_GET
+    CLI -->|"DELETE /hospitals/"| EXT_DEL
+    CLI -->|"GET /health"| EXT_HLT
 ```
 
 ### 1.2 End-to-End Execution Sequence Diagram

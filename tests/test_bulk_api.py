@@ -91,3 +91,25 @@ async def test_bulk_create_rejects_exceeding_20_rows(async_client, exceed_limit_
     assert response.status_code == 422
     data = response.json()
     assert "exceeds the maximum allowed limit of 20 hospitals" in str(data)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_health_and_root_head_methods_supported(async_client):
+    """Verify that HEAD and GET requests are supported for uptime monitoring."""
+    settings = get_settings()
+    base_url = settings.HOSPITAL_API_BASE_URL.rstrip("/")
+    respx.get(f"{base_url}/health").respond(200, json={"status": "healthy"})
+
+    # Test HEAD on /health (UptimeRobot default method)
+    head_resp = await async_client.head("/health")
+    assert head_resp.status_code == 200
+
+    # Test GET on /health
+    get_resp = await async_client.get("/health")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["status"] == "healthy"
+
+    # Test HEAD on root /
+    root_head = await async_client.head("/", follow_redirects=False)
+    assert root_head.status_code == 307

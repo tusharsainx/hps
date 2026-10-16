@@ -9,15 +9,15 @@ from app.services.hospital_client import HospitalClient
 router = APIRouter()
 
 
-@router.get("/", summary="Root Redirect", include_in_schema=False)
+@router.api_route("/", methods=["GET", "HEAD"], summary="Root Redirect", include_in_schema=False)
 async def root():
     """Redirect root path to interactive Swagger OpenAPI documentation."""
     return RedirectResponse(url="/docs")
 
 
-@router.get("/health", summary="Health Check", tags=["Monitoring"])
+@router.api_route("/health", methods=["GET", "HEAD"], summary="Health Check", tags=["Monitoring"])
 async def health_check():
-    """Health check endpoint for Render and container orchestrators."""
+    """Health check endpoint for Render, UptimeRobot, and container orchestrators."""
     settings = get_settings()
     client = HospitalClient(settings=settings)
     try:
