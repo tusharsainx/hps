@@ -9,13 +9,14 @@ from app.services.hospital_client import HospitalClient
 router = APIRouter()
 
 
-@router.api_route("/", methods=["GET", "HEAD"], summary="Root Redirect", include_in_schema=False)
+@router.get("/", summary="Root Redirect", include_in_schema=False)
+@router.head("/", include_in_schema=False)
 async def root():
     """Redirect root path to interactive Swagger OpenAPI documentation."""
     return RedirectResponse(url="/docs")
 
 
-@router.api_route("/health", methods=["GET", "HEAD"], summary="Health Check", tags=["Monitoring"])
+@router.get("/health", summary="Health Check", tags=["Monitoring"])
 async def health_check():
     """Health check endpoint for Render, UptimeRobot, and container orchestrators."""
     settings = get_settings()
@@ -30,4 +31,10 @@ async def health_check():
         "version": settings.APP_VERSION,
         "upstream_api_connected": upstream_ok,
     }
+
+
+@router.head("/health", include_in_schema=False)
+async def health_check_head():
+    """HEAD probe for UptimeRobot and load balancers."""
+    return await health_check()
 
