@@ -63,7 +63,7 @@ class BatchRecordInternal:
         )
 
     def to_progress_response(self) -> BatchProgressResponse:
-        """Export state for progress polling and WebSocket updates."""
+        """Export state for progress polling endpoints."""
         self.sync_counters()
         items = [self.hospitals[r] for r in sorted(self.hospitals.keys())]
         completed = self.processed_hospitals + self.failed_hospitals

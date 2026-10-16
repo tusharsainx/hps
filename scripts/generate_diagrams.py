@@ -70,19 +70,19 @@ def render_hld():
 
     # 1. Client Layer (Top Left)
     draw_card(4, 76, 22, 14, "CLIENT LAYER", "Interaction Interfaces", border="#8b5cf6", title_color="#c084fc")
-    draw_component(6, 82, 18, 3.8, "Web Dashboard UI", "Drag & Drop CSV / Live Progress", bg="#1e1b4b", border="#8b5cf6")
-    draw_component(6, 77.5, 18, 3.8, "Swagger Docs / API Clients", "HTTP / REST & WebSocket Client", bg="#1e1b4b", border="#8b5cf6")
+    draw_component(6, 82, 18, 3.8, "API Clients / cURL", "Automated Scripts & Ingestion", bg="#1e1b4b", border="#8b5cf6")
+    draw_component(6, 77.5, 18, 3.8, "Swagger UI (/docs)", "Interactive OpenAPI Explorer", bg="#1e1b4b", border="#8b5cf6")
 
     # 2. Ingestion & API Layer
-    draw_card(32, 70, 36, 20, "FASTAPI INGESTION & CONTROLLER LAYER", "REST API & WebSocket Handlers", border="#3b82f6", title_color="#60a5fa")
-    draw_component(34, 80, 15, 5, "POST /hospitals/bulk", "Multipart CSV Upload (Max 20 rows)", bg="#1e293b", border="#3b82f6")
+    draw_card(32, 70, 36, 20, "FASTAPI INGESTION & CONTROLLER LAYER", "REST Routing & Background Dispatch", border="#3b82f6", title_color="#60a5fa")
+    draw_component(34, 80, 15, 5, "POST /hospitals/bulk", "Fast 202 Accepted (<15ms)", bg="#1e293b", border="#3b82f6")
     draw_component(51, 80, 15, 5, "POST /bulk/validate", "CSV Pre-Validation Diagnostic", bg="#1e293b", border="#3b82f6")
-    draw_component(34, 72, 15, 5, "POST /bulk/{id}/resume", "Resume Failed Batches", bg="#1e293b", border="#3b82f6")
-    draw_component(51, 72, 15, 5, "WS /ws/batches/{id}", "Real-Time WebSocket Stream", bg="#1e293b", border="#3b82f6")
+    draw_component(34, 72, 15, 5, "POST /bulk/{id}/resume", "Smart Resume (Delta Retry)", bg="#1e293b", border="#3b82f6")
+    draw_component(51, 72, 15, 5, "GET /bulk/{id}", "Real-Time Status & Progress", bg="#1e293b", border="#3b82f6")
 
     # Connect Client -> API
     draw_arrow(26, 84, 34, 83, "CSV Upload", color="#c084fc")
-    draw_arrow(26, 74, 51, 74, "Live WebSocket", color="#c084fc", rad=0.1)
+    draw_arrow(26, 74, 51, 74, "Poll Status", color="#c084fc", rad=0.1)
 
     # 3. Core Domain & Orchestration Layer
     draw_card(4, 28, 92, 38, "CORE APPLICATION & ORCHESTRATION LAYER", "Business Logic, Concurrency & Resilience", border="#10b981", title_color="#34d399")
@@ -98,13 +98,13 @@ def render_hld():
     draw_arrow(32, 55, 36, 55, "Valid Records", color="#34d399")
     draw_arrow(64, 55, 68, 55, "HTTP Calls", color="#34d399")
 
-    # Rate Limiter & Broadcaster
-    draw_component(36, 32, 28, 12, "TokenBucketRateLimiter", "• Upstream Rate Control (25 RPS)\n• Leaky/Token Bucket Algorithm\n• Prevents 429 Rate Limits", bg="#172554", border="#3b82f6")
-    draw_component(8, 32, 24, 12, "ProgressBroadcaster", "• WebSocket Client Pub/Sub\n• Broadcasts per-row status\n• Percentage & elapsed counter", bg="#172554", border="#3b82f6")
-    draw_component(68, 32, 24, 12, "Resilience & Circuit Guard", "• Retries 502/503/504 errors\n• Non-retryable 4xx handling\n• Clean rollback / DELETE support", bg="#172554", border="#3b82f6")
+    # Background Tasks & Heartbeat
+    draw_component(36, 32, 28, 12, "Concurrency Controller", "• asyncio.Semaphore(10)\n• Bounded HTTP concurrency\n• Prevents downstream 429s", bg="#172554", border="#3b82f6")
+    draw_component(8, 32, 24, 12, "BackgroundTasks Runner", "• Non-blocking async execution\n• Immediate 202 client return\n• Safe background lifecycle", bg="#172554", border="#3b82f6")
+    draw_component(68, 32, 24, 12, "Resilience & Heartbeat", "• Retries 502/503/504 errors\n• Keep-alive heartbeat ping\n• Clean rollback / DELETE support", bg="#172554", border="#3b82f6")
 
     draw_arrow(50, 51, 50, 44, "Throttle", color="#38bdf8")
-    draw_arrow(36, 54, 20, 44, "Progress Event", color="#38bdf8")
+    draw_arrow(36, 54, 20, 44, "Enqueue Task", color="#38bdf8")
 
     # 4. Storage & Persistence Ports (Bottom Left)
     draw_card(4, 4, 42, 20, "PORT: STATE REPOSITORY (SOLID)", "Pluggable Storage Layer (BaseBatchRepository)", border="#f59e0b", title_color="#fbbf24")
@@ -152,12 +152,12 @@ def render_sequence():
 
     # Lifeline Participants
     actors = [
-        {"x": 8, "name": "Client / UI", "color": "#8b5cf6"},
+        {"x": 8, "name": "Client / cURL", "color": "#8b5cf6"},
         {"x": 22, "name": "FastAPI Router", "color": "#3b82f6"},
         {"x": 36, "name": "CsvValidator", "color": "#10b981"},
         {"x": 50, "name": "BatchRepository", "color": "#f59e0b"},
         {"x": 64, "name": "BulkProcessor", "color": "#06b6d4"},
-        {"x": 78, "name": "ProgressHub (WS)", "color": "#ec4899"},
+        {"x": 78, "name": "HTTPX Pool (10x)", "color": "#ec4899"},
         {"x": 92, "name": "Upstream API (Render)", "color": "#ef4444"},
     ]
 
@@ -180,24 +180,26 @@ def render_sequence():
     # Sequence Messages
     steps = [
         {"step": 1, "from": 8, "to": 22, "y": 83, "label": "1. POST /hospitals/bulk (multipart CSV file)", "color": "#8b5cf6", "dashed": False},
-        {"step": 2, "from": 22, "to": 36, "y": 77, "label": "2. validate_and_parse(content_bytes)", "color": "#10b981", "dashed": False},
-        {"step": 3, "from": 36, "to": 22, "y": 72, "label": "3. Valid records (<= 20 rows, normalized)", "color": "#10b981", "dashed": True},
-        {"step": 4, "from": 22, "to": 50, "y": 66, "label": "4. create_batch(batch_id=UUID, records)", "color": "#f59e0b", "dashed": False},
-        {"step": 5, "from": 22, "to": 64, "y": 60, "label": "5. process_batch(records, batch_id)", "color": "#06b6d4", "dashed": False},
-        {"step": 6, "from": 64, "to": 78, "y": 55, "label": "6. broadcast(Status: PROCESSING, 0%)", "color": "#ec4899", "dashed": False},
-        {"step": 7, "from": 78, "to": 8, "y": 51, "label": "7. WebSocket push: Progress event", "color": "#ec4899", "dashed": True},
+        {"step": 2, "from": 22, "to": 36, "y": 78, "label": "2. validate_and_parse(content_bytes)", "color": "#10b981", "dashed": False},
+        {"step": 3, "from": 36, "to": 22, "y": 73, "label": "3. Valid records (<= 20 rows, schema verified)", "color": "#10b981", "dashed": True},
+        {"step": 4, "from": 22, "to": 50, "y": 68, "label": "4. create_batch(batch_id=UUID, records)", "color": "#f59e0b", "dashed": False},
+        {"step": 5, "from": 22, "to": 64, "y": 63, "label": "5. BackgroundTasks: process_batch(records, batch_id)", "color": "#06b6d4", "dashed": False},
+        {"step": 6, "from": 22, "to": 8, "y": 58, "label": "6. Return 202 Accepted (<15ms, batch_id, status: processing)", "color": "#8b5cf6", "dashed": True},
 
         # Concurrent Creation Loop
-        {"step": 8, "from": 64, "to": 92, "y": 44, "label": "8. Concurrently: POST /hospitals/ (Semaphore=10, batch_id)", "color": "#ef4444", "dashed": False},
-        {"step": 9, "from": 92, "to": 64, "y": 38, "label": "9. 200 OK: Hospital Created (id=101.., active: false)", "color": "#ef4444", "dashed": True},
-        {"step": 10, "from": 64, "to": 50, "y": 33, "label": "10. update_row_success(batch_id, row, id)", "color": "#f59e0b", "dashed": False},
-        {"step": 11, "from": 64, "to": 78, "y": 28, "label": "11. broadcast(processed: 20/20, 100%)", "color": "#ec4899", "dashed": False},
+        {"step": 7, "from": 64, "to": 78, "y": 50, "label": "7. Concurrent Worker: acquire Semaphore(10)", "color": "#ec4899", "dashed": False},
+        {"step": 8, "from": 78, "to": 92, "y": 44, "label": "8. POST /hospitals/ (batch_id, retry backoff)", "color": "#ef4444", "dashed": False},
+        {"step": 9, "from": 92, "to": 78, "y": 39, "label": "9. 200 OK: Hospital Created (id, active: false)", "color": "#ef4444", "dashed": True},
+        {"step": 10, "from": 78, "to": 50, "y": 34, "label": "10. update_row_success(batch_id, row, id)", "color": "#f59e0b", "dashed": False},
 
         # Activation Step
-        {"step": 12, "from": 64, "to": 92, "y": 22, "label": "12. PATCH /hospitals/batch/{batch_id}/activate", "color": "#ef4444", "dashed": False},
-        {"step": 13, "from": 92, "to": 64, "y": 17, "label": "13. 200 OK: Activated count = 20", "color": "#ef4444", "dashed": True},
-        {"step": 14, "from": 64, "to": 50, "y": 12, "label": "14. complete_batch(activated=True)", "color": "#f59e0b", "dashed": False},
-        {"step": 15, "from": 22, "to": 8, "y": 7, "label": "15. Return 200 OK (Full BulkProcessResponse JSON)", "color": "#8b5cf6", "dashed": True},
+        {"step": 11, "from": 64, "to": 92, "y": 27, "label": "11. PATCH /hospitals/batch/{batch_id}/activate", "color": "#ef4444", "dashed": False},
+        {"step": 12, "from": 92, "to": 64, "y": 22, "label": "12. 200 OK: Activated count = 20", "color": "#ef4444", "dashed": True},
+        {"step": 13, "from": 64, "to": 50, "y": 17, "label": "13. complete_batch(activated=True)", "color": "#f59e0b", "dashed": False},
+
+        # Polling Step
+        {"step": 14, "from": 8, "to": 22, "y": 12, "label": "14. Poll: GET /hospitals/bulk/{batch_id}", "color": "#8b5cf6", "dashed": False},
+        {"step": 15, "from": 22, "to": 8, "y": 7, "label": "15. Return 200 OK (BatchProgressResponse JSON)", "color": "#8b5cf6", "dashed": True},
     ]
 
     # Draw Loop Box around Step 8-11

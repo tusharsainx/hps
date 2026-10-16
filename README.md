@@ -8,48 +8,181 @@ It reliably handles multipart CSV file uploads, validates data formats and const
 
 ## 🏗️ 1. Architecture & System Design
 
+### 1.1 High-Level Design (HLD) Architecture
+
+The diagram below illustrates the end-to-end architecture, showing the decoupled layers from the client entry point to the upstream Render service:
+
+```mermaid
+flowchart TB
+    subgraph Clients["1. Client Layer"]
+        C1["API Consumers / cURL / Scripts"]
+        C2["Swagger OpenAPI UI (/docs)"]
+    end
+
+    subgraph API["2. FastAPI Ingestion & Controller Layer"]
+        R_BULK["routes_bulk.py<br/>• POST /hospitals/bulk (202 Accepted / ?sync=true)<br/>• POST /hospitals/bulk/validate<br/>• POST /hospitals/bulk/{batch_id}/resume<br/>• DELETE /hospitals/bulk/{batch_id}"]
+        R_STAT["routes_status.py<br/>• GET /hospitals/bulk/{batch_id} (Poll Progress)<br/>• GET /hospitals/bulk (List Historical Batches)"]
+        R_ROOT["routes_ui.py<br/>• GET / (Redirect to /docs)<br/>• GET /health (Health Check Probe)"]
+    end
+
+    subgraph Core["3. Core Domain & Orchestration Layer"]
+        VAL["CsvValidator<br/>• Stream parsing (DictReader)<br/>• Header schema check (name, address, phone)<br/>• Max 20 rows enforcement<br/>• Whitespace & UTF-8 BOM normalization"]
+        PROC["BulkProcessor (Orchestrator)<br/>• Non-blocking background worker dispatch<br/>• Delta resume calculator (upstream diffing)<br/>• Concurrency control (asyncio.Semaphore=10)<br/>• Atomic batch activation coordinator"]
+        CLI["HospitalClient (HTTPX AsyncClient)<br/>• Keep-Alive connection pool (50 max, 20 idle)<br/>• Exponential backoff + full jitter (3 retries)<br/>• Render free-tier keep-alive heartbeat loop"]
+    end
+
+    subgraph State["4. State & Repository Layer"]
+        REPO["InMemoryBatchRepository (Thread-Safe LRU)<br/>• threading.Lock concurrency safety<br/>• Batch metadata & row item tracking<br/>• Real-time progress metrics (percentage, counts)<br/>• Bounded LRU capacity to prevent memory leaks"]
+    end
+
+    subgraph Upstream["5. External Hospital Directory API (Render)"]
+        EXT_CREATE["POST /hospitals/<br/>(id, active: false, creation_batch_id)"]
+        EXT_ACT["PATCH /hospitals/batch/{batch_id}/activate<br/>(Atomic activation -> active: true)"]
+        EXT_GET["GET /hospitals/?creation_batch_id={batch_id}<br/>(Query created rows for resume diff)"]
+        EXT_DEL["DELETE /hospitals/{hospital_id}<br/>(Rollback batch hospitals)"]
+        EXT_HLT["GET /health<br/>(Upstream readiness check)"]
+    end
+
+    %% Client Interactions
+    C1 -->|1. Multipart CSV Upload| R_BULK
+    C1 -->|Poll Progress / Resume / Delete| R_BULK & R_STAT
+    C2 -->|Interactive API Testing| API
+
+    %% Ingestion to Validation & Processing
+    R_BULK -->|2. Validate CSV| VAL
+    VAL -->|Valid Records| R_BULK
+    R_BULK -->|3. Register Batch (UUID)| REPO
+    R_BULK -->|4. Add Background Task| PROC
+    R_BULK -.->|5. Return 202 Accepted (<15ms)| C1
+
+    %% Status Polling
+    R_STAT -->|Read Status & Progress| REPO
+
+    %% Core Processing & Concurrency
+    PROC -->|Update Row Statuses| REPO
+    PROC -->|Concurrent Requests (Semaphore=10)| CLI
+    R_ROOT -->|Health Probe| CLI
+
+    %% Outbound HTTP to Render
+    CLI -->|POST /hospitals/| EXT_CREATE
+    CLI -->|PATCH /activate| EXT_ACT
+    CLI -->|GET /hospitals/| EXT_GET
+    CLI -->|DELETE /hospitals/| EXT_DEL
+    CLI -->|GET /health| EXT_HLT
+```
+
+### 1.2 End-to-End Execution Sequence Diagram
+
+The sequence diagram below models the actual execution path: fast non-blocking acceptance (`202 Accepted`), concurrent background processing throttled by `asyncio.Semaphore(10)`, atomic activation on 100% success, and client polling:
+
 ```mermaid
 sequenceDiagram
     autonumber
     actor Client as API Consumer / Swagger
     participant API as FastAPI Ingestion Layer
     participant Val as CSV Validator Service
-    participant Store as Batch State Repository
+    participant Repo as InMemoryBatchRepository
     participant Engine as Async Bulk Processor
     participant Upstream as Hospital Directory API (Render)
 
+    %% Step 1: Upload & Immediate Fast Acceptance
+    rect rgb(240, 245, 255)
+    Note over Client,API: Phase 1: Multipart Ingestion & Fast Acceptance (<15ms)
     Client->>API: POST /hospitals/bulk (CSV File)
     API->>Val: Validate CSV (Headers, Data Types, Max 20 Rows)
-    alt Validation Failure
+    alt Validation Failure (e.g. >20 rows or missing required columns)
         Val-->>API: CsvValidationException (Row-level errors)
-        API-->>Client: 422 Unprocessable Entity
+        API-->>Client: 422 Unprocessable Content (Diagnostic JSON)
     end
-    Val-->>API: Validated Hospital Records
-    API->>Store: Initialize Batch (UUID, Status: PROCESSING)
-    API->>Engine: Dispatch Ingestion Tasks
+    Val-->>API: Validated Hospital Records (<= 20 rows)
+    API->>Repo: create_batch(batch_id=UUID, records) -> Status: PROCESSING
+    API->>Engine: Enqueue Background Task: process_batch(records, batch_id)
+    API-->>Client: 202 Accepted (batch_id, status: "processing")
+    Note over Client: Client receives 202 immediately and polls status via GET /hospitals/bulk/{batch_id}
+    end
 
-    par Concurrent Upstream Calls (asyncio.Semaphore = 10)
+    %% Step 2: Background Concurrent Creation Loop
+    rect rgb(245, 255, 245)
+    Note over Engine,Upstream: Phase 2: Concurrent Background Ingestion (asyncio.Semaphore = 10)
+    par Concurrent HTTP Workers (Bounded to 10 by Semaphore)
         loop For each Hospital Record
-            Engine->>Upstream: POST /hospitals/ (with creation_batch_id)
-            alt Request Successful
+            Engine->>Upstream: POST /hospitals/ (name, address, phone, creation_batch_id)
+            alt Upstream Success (200 / 201)
                 Upstream-->>Engine: 200 OK (id, active: false)
-                Engine->>Store: Update Row Status (CREATED)
-            else Transient Error (5xx / Timeout)
-                Engine->>Engine: Retry with Exponential Backoff (up to 3x)
-                Engine->>Store: Update Row Status (FAILED)
+                Engine->>Repo: update_row_success(batch_id, row, hospital_id)
+            else Transient Error (502 / 503 / 504 / Timeout)
+                Engine->>Engine: Retry with Exponential Backoff + Jitter (up to 3x)
+                alt Recovered on Retry
+                    Upstream-->>Engine: 200 OK (id, active: false)
+                    Engine->>Repo: update_row_success(batch_id, row, hospital_id)
+                else Exhausted All Retries
+                    Engine->>Repo: update_row_failed(batch_id, row, error_message)
+                end
             end
         end
     end
+    end
 
-    alt All Hospitals Created Successfully
+    %% Step 3: Atomic Batch Activation
+    rect rgb(255, 250, 240)
+    Note over Engine,Upstream: Phase 3: Atomic Batch Activation
+    alt All Hospitals Created Successfully (100% Success)
         Engine->>Upstream: PATCH /hospitals/batch/{batch_id}/activate
         Upstream-->>Engine: 200 OK (activated_count)
-        Engine->>Store: Mark Batch ACTIVATED (status: created_and_activated)
-        API-->>Client: 200 OK (Full Batch Summary Response)
-    else Any Row Failed
-        Engine->>Store: Mark Batch PARTIALLY_FAILED
-        API-->>Client: 200 OK (Response with failed_hospitals > 0, batch_activated: false)
+        Engine->>Repo: complete_batch(activated=True) -> Status: ACTIVATED
+    else Any Row Failed (Partial Failure)
+        Engine->>Repo: complete_batch(activated=False) -> Status: PARTIALLY_FAILED
     end
+    end
+
+    %% Step 4: Client Polling
+    rect rgb(255, 245, 255)
+    Note over Client,Repo: Phase 4: Real-Time Status Polling
+    Client->>API: GET /hospitals/bulk/{batch_id}
+    API->>Repo: get_batch(batch_id)
+    Repo-->>API: BatchState (Progress %, processed_hospitals, row items)
+    API-->>Client: 200 OK (BatchProgressResponse)
+    end
+```
+
+> **💡 Synchronous Mode (`?sync=true`)**: Passing `POST /hospitals/bulk?sync=true` bypasses background queuing and awaits the entire pipeline before responding with `200 OK` (useful for synchronous CLI scripts or testing).
+
+### 1.3 Smart Resume Sequence Diagram (Delta Retry)
+
+When a batch partially fails, `POST /hospitals/bulk/{batch_id}/resume` queries upstream to identify which records were already created, skips them, retries only the missing rows, and activates the batch:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as API Consumer / Swagger
+    participant API as FastAPI Ingestion Layer
+    participant Repo as InMemoryBatchRepository
+    participant Engine as Async Bulk Processor
+    participant Upstream as Hospital Directory API (Render)
+
+    Client->>API: POST /hospitals/bulk/{batch_id}/resume
+    API->>Engine: resume_batch(batch_id)
+    Engine->>Repo: get_batch(batch_id)
+    Repo-->>Engine: BatchState (Cached original CSV rows)
+
+    Engine->>Upstream: GET /hospitals/?creation_batch_id={batch_id}
+    Upstream-->>Engine: Existing Hospital Records (e.g. 15 already created)
+
+    Engine->>Repo: Mark existing records as CREATED (skips redundant creation)
+    
+    rect rgb(245, 255, 245)
+    Note over Engine,Upstream: Retrying only failed / missing rows (e.g. remaining 5 rows)
+    par Concurrent Workers (Semaphore = 10)
+        Engine->>Upstream: POST /hospitals/ (missing row payload, creation_batch_id)
+        Upstream-->>Engine: 200 OK (id, active: false)
+        Engine->>Repo: update_row_success(batch_id, row, hospital_id)
+    end
+    end
+
+    Engine->>Upstream: PATCH /hospitals/batch/{batch_id}/activate
+    Upstream-->>Engine: 200 OK (activated_count = 20)
+    Engine->>Repo: complete_batch(activated=True) -> Status: ACTIVATED
+    API-->>Client: 200 OK (Full BulkProcessResponse with 100% created_and_activated)
 ```
 
 ---
@@ -191,6 +324,26 @@ curl "http://localhost:8000/hospitals/bulk"
 
 ---
 
+### 6. Rollback / Delete Batch (Bonus)
+* **Endpoint**: `DELETE /hospitals/bulk/{batch_id}`
+* Roll back and delete all hospital records associated with the specified batch ID from the upstream directory.
+
+```bash
+curl -X DELETE "http://localhost:8000/hospitals/bulk/550e8400-e29b-41d4-a716-446655440000"
+```
+
+---
+
+### 7. Service & Upstream Health Check
+* **Endpoint**: `GET /health`
+* Readiness and liveness probe checking internal health and upstream Render API reachability.
+
+```bash
+curl "http://localhost:8000/health"
+```
+
+---
+
 ## 🚀 6. Getting Started
 
 ### Local Development Setup
@@ -270,7 +423,7 @@ Deploying to Render as a Web Service:
 
 ---
 
-## 🚀 9. Future Production Scaling Architecture (Enterprise & Big Data Scale)
+## 🚀 9. Future Production Scaling Architecture & Optimizations (Enterprise & Big Data Scale)
 
 For enterprise scale, multi-gigabyte CSV files (millions of records), or high-concurrency multi-tenant workloads, the architecture evolves from direct multipart ingestion to a **decoupled, event-driven cloud pipeline**:
 
